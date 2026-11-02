@@ -61,11 +61,13 @@ done
 [ "$(uname -s)" = Linux ] || fail "This install is for Linux. Download the desktop app at https://openbot.run."
 [ "$(id -u)" -eq 0 ] || fail "Run this with sudo."
 [ -d /run/systemd/system ] || fail "OpenBot needs systemd."
-command -v apt-get >/dev/null || fail "OpenBot needs Ubuntu 24.04 or a newer Ubuntu or Debian."
+command -v apt-get >/dev/null || fail "OpenBot needs Ubuntu 22.04 or a newer Ubuntu or Debian."
 # shellcheck disable=SC1091
 . /etc/os-release
-if [ "${ID:-}" != ubuntu ] || [ "${VERSION_ID:-}" != 24.04 ]; then
-  echo "OpenBot is tested on Ubuntu 24.04. This is ${PRETTY_NAME:-an unknown system}; the install continues." >&2
+# 22.04 installs the same libraries as 24.04, under the names without the t64 suffix.
+# install_packages in openbot-hosted-update selects the name that apt has.
+if [ "${ID:-}" != ubuntu ] || { [ "${VERSION_ID:-}" != 22.04 ] && [ "${VERSION_ID:-}" != 24.04 ] && [ "${VERSION_ID:-}" != 26.04 ]; }; then
+  echo "OpenBot installs on Ubuntu 22.04, 24.04, and 26.04. This is ${PRETTY_NAME:-an unknown system}; the install continues." >&2
 fi
 case $(uname -m) in
   x86_64) architecture=x86_64 manifest=latest-linux.yml ;;
@@ -99,6 +101,12 @@ chmod 0700 "$work/OpenBot.AppImage"
 
 setup="$work/squashfs-root/resources/hosting/openbot-server-setup"
 [ -f "$setup" ] || fail "OpenBot $version cannot install as a server. Try again after the next release."
+# A checkout next to this file can carry a hosting script newer than the downloaded release.
+hosting_dir=$(cd "$(dirname "$0")/hosting" 2>/dev/null && pwd || true)
+if [ -n "$hosting_dir" ] && [ -f "$hosting_dir/openbot-server-setup" ]; then
+  cp -a "$hosting_dir/." "$work/squashfs-root/resources/hosting/"
+  setup="$work/squashfs-root/resources/hosting/openbot-server-setup"
+fi
 # A release before --display-size refuses a fourth argument.
 if [ -n "$display_size" ] && ! grep -q OPENBOT_DISPLAY_SIZE "$setup"; then
   fail "OpenBot $version has no --display-size. Install without it, or try again after the next release."

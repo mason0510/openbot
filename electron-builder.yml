@@ -1,5 +1,5 @@
-appId: app.openbot.desktop
-productName: OpenBot
+appId: app.slavebot.desktop
+productName: slavebot
 copyright: Copyright © 2026 Synthetify Labs spółka z ograniczoną odpowiedzialnością
 protocols:
   - name: OpenBot invitations
@@ -126,6 +126,9 @@ mac:
   extendInfo:
     CFBundleIconName: Icon
     ElectronTeamID: ZTRDTUL87R
+    LSEnvironment:
+      OPENBOT_AUTH_API_URL: https://api.attendant.mwcpool.uk
+      OPENBOT_MOBILE_AUTH_API_URL: https://api.attendant.mwcpool.uk
     NSMicrophoneUsageDescription: OpenBot uses the microphone to transcribe voice prompts locally on this Mac.
     # Computer Use runs the driver as a child process, so macOS asks for both grants in OpenBot's
     # name and shows these sentences. Under the hardened runtime, macOS shows the Automation prompt

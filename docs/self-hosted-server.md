@@ -9,7 +9,7 @@ To run it in a container, see [Docker](docker.md).
 
 ## Install
 
-On Ubuntu 24.04 or 26.04 (x86_64 or arm64) with systemd:
+On Ubuntu 22.04, 24.04, or 26.04 (x86_64 or arm64) with systemd:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/nightly-labs/openbot/main/scripts/install-server.sh | sudo bash

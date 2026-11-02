@@ -1,5 +1,7 @@
-# The Ubuntu 24.04 packages of a hosted server. provision.sh installs them in the template, and
-# openbot-hosted-update installs the list of a new release before that release starts.
+# The Ubuntu 24.04 package names of a hosted server. Ubuntu 22.04 and Debian 12 publish the same
+# libraries without the t64 suffix. install_packages selects the name that apt has.
+# provision.sh installs them in the template, and openbot-hosted-update installs the list of a new
+# release before that release starts.
 # The server: AppArmor, D-Bus, the keyring and a virtual display.
 apparmor
 ca-certificates

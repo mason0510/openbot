@@ -111,9 +111,10 @@ available_package() {
 }
 
 # Installs only the missing packages, so a check that finds nothing new does not use apt.
-# packages.txt has the Ubuntu 24.04 names. Debian 12 names some libraries without the "t64" suffix,
-# and newer releases replace some libraries of the remote desktop runtime. A package that the system
-# does not have is skipped with a warning; then only the feature that uses it can fail.
+# packages.txt has the Ubuntu 24.04 names. Ubuntu 22.04 and Debian 12 name those libraries without
+# the "t64" suffix, and newer releases replace some libraries of the remote desktop runtime. A
+# package that the system does not have is skipped with a warning; then only the feature that uses
+# it can fail.
 install_packages() {
   local package missing=() available=()
   while read -r package; do
@@ -219,9 +220,18 @@ install_hosting() {
     install -m 0755 "$source/$file" "$INSTALL/hosted/.$file.new"
     mv -f "$INSTALL/hosted/.$file.new" "$INSTALL/hosted/$file"
   done
-  install -m 0644 "$source/openbot-hosted.apparmor" /etc/apparmor.d/openbot-hosted
-  if command -v apparmor_parser >/dev/null && [ -d /sys/kernel/security/apparmor ]; then
+  # Ubuntu 24.04 denies unprivileged user namespaces unless this profile grants userns.
+  # Ubuntu 22.04 has abi/3.0 only, so that profile does not parse. The kernel there still allows
+  # the namespaces when kernel.unprivileged_userns_clone is 1.
+  if command -v apparmor_parser >/dev/null && [ -d /sys/kernel/security/apparmor ] &&
+    [ -f /etc/apparmor.d/abi/4.0 ]; then
+    install -m 0644 "$source/openbot-hosted.apparmor" /etc/apparmor.d/openbot-hosted
     apparmor_parser --replace /etc/apparmor.d/openbot-hosted
+  elif [ -d /sys/kernel/security/apparmor ]; then
+    userns_clone=$(sysctl -n kernel.unprivileged_userns_clone 2>/dev/null || echo 1)
+    [ "$userns_clone" = 1 ] || fail "This system has no AppArmor abi/4.0, and unprivileged user namespaces are disabled."
+    rm -f /etc/apparmor.d/openbot-hosted
+    echo "This AppArmor has no abi/4.0. OpenBot continues without that profile." >&2
   fi
   for unit in "${UNITS[@]}"; do
     sed "s/@SERVICE_USER@/$user/g" "$source/$unit" >"$INSTALL/hosted/.unit.new"
