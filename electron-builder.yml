@@ -127,8 +127,9 @@ mac:
     CFBundleIconName: Icon
     ElectronTeamID: ZTRDTUL87R
     LSEnvironment:
-      OPENBOT_AUTH_API_URL: https://api.attendant.mwcpool.uk
-      OPENBOT_MOBILE_AUTH_API_URL: https://api.attendant.mwcpool.uk
+      OPENBOT_AUTH_API_URL: https://api-attendant.mwcpool.uk
+      OPENBOT_MOBILE_AUTH_API_URL: https://api-attendant.mwcpool.uk
+      OPENBOT_REMOTE_SIGNAL_URL: wss://api-attendant.mwcpool.uk/signal
     NSMicrophoneUsageDescription: OpenBot uses the microphone to transcribe voice prompts locally on this Mac.
     # Computer Use runs the driver as a child process, so macOS asks for both grants in OpenBot's
     # name and shows these sentences. Under the hardened runtime, macOS shows the Automation prompt

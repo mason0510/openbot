@@ -1,6 +1,5 @@
 import { type AvatarMimeType, isValidAvatarImage } from "@openbot/contracts/avatar-images";
 import { AVATAR_IMAGE_LIMITS } from "@openbot/contracts/input-limits";
-import { OPENBOT_CONTROL_PLANE_ORIGIN } from "@openbot/contracts/invite-links";
 import type { CentralAuthUser } from "@openbot/contracts/ipc";
 import {
   isMobileConnectDevelopmentHost,
@@ -116,10 +115,17 @@ async function redeemMobileConnectSession(value: string): Promise<MobileSession>
   return session;
 }
 
-/** The account service for email sign-in. A development build can name a local one. */
+const ATTENDANT_ACCOUNT_ORIGIN = "https://api-attendant.mwcpool.uk";
+
+/**
+ * The account service for email sign-in and registration.
+ *
+ * Guarantees: a valid `EXPO_PUBLIC_OPENBOT_API_URL` wins. Otherwise `https://api-attendant.mwcpool.uk` is used.
+ * Does not use `https://api.openbot.run`. Does not accept a non-account URL.
+ */
 function mobileAccountApiUrl(): string {
   const override = process.env.EXPO_PUBLIC_OPENBOT_API_URL;
-  return (override && __DEV__ && normalizeAccountApiUrl(override)) || OPENBOT_CONTROL_PLANE_ORIGIN;
+  return (override && normalizeAccountApiUrl(override)) || ATTENDANT_ACCOUNT_ORIGIN;
 }
 
 export interface MobileEmailChallenge {
@@ -741,10 +747,30 @@ function decodeStoredMobileCredential(value: unknown): MobileCredential {
   return { apiUrl, sessionToken: value.sessionToken };
 }
 
+/**
+ * Moves a stored account origin off the two-label host.
+ *
+ * Guarantees: `https://api.attendant.mwcpool.uk` becomes `https://api-attendant.mwcpool.uk`.
+ * Other origins stay unchanged. It does not check that the new host answers.
+ */
+function migrateAttendantAccountOrigin(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return value;
+  }
+  // The two-label name has no edge certificate. The one-label name is the live account service.
+  if (url.protocol !== "https:" || url.hostname !== "api.attendant.mwcpool.uk") return value;
+  url.hostname = "api-attendant.mwcpool.uk";
+  return url.toString().replace(/\/$/, "");
+}
+
 /** The Mobile Connect rule for an account service origin: HTTPS, or HTTP on a private network. */
 function normalizeAccountApiUrl(value: string): string | null {
+  const migrated = migrateAttendantAccountOrigin(value);
   return (
-    parseMobileConnectUrl(`openbot://mobile-connect?api=${encodeURIComponent(value)}&ticket=${"x".repeat(32)}`)
+    parseMobileConnectUrl(`openbot://mobile-connect?api=${encodeURIComponent(migrated)}&ticket=${"x".repeat(32)}`)
       ?.apiUrl ?? null
   );
 }

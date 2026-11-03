@@ -4,13 +4,23 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::auth::{self, normalize_email, AuthReply};
+use crate::jwt::{ClientTicketClaims, TicketSigner};
+use crate::signal::{self, Registry};
 use crate::store::Store;
 
 /** Handles one HTTP/1.1 request. The connection is closed after the response.
  * Guarantees the router sees the full Content-Length body when those bytes arrive within 10 seconds and the body is at most 64 KiB.
  * Does not support chunked transfer or a second request on the same connection.
  */
-pub fn handle(mut stream: TcpStream, store: &Arc<Mutex<Store>>, from: &str, now: u64) -> Result<(), String> {
+pub fn handle(
+    mut stream: TcpStream,
+    store: &Arc<Mutex<Store>>,
+    from: &str,
+    signal_url: &str,
+    registry: &Arc<Registry>,
+    signer: &Arc<TicketSigner>,
+    now: u64,
+) -> Result<(), String> {
     stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
     stream.set_write_timeout(Some(Duration::from_secs(20))).ok();
     let buffer = read_request(&mut stream)?;
@@ -23,17 +33,28 @@ pub fn handle(mut stream: TcpStream, store: &Arc<Mutex<Store>>, from: &str, now:
     let target = parts.next().unwrap_or("");
     let mut content_length = 0_usize;
     let mut authorization = String::new();
+    let mut websocket_key = String::new();
+    let mut upgrade = false;
     for line in lines {
         let Some((name, value)) = line.split_once(':') else { continue };
         if name.eq_ignore_ascii_case("content-length") {
             content_length = value.trim().parse().unwrap_or(0);
         } else if name.eq_ignore_ascii_case("authorization") {
             authorization = value.trim().to_string();
+        } else if name.eq_ignore_ascii_case("sec-websocket-key") {
+            websocket_key = value.trim().to_string();
+        } else if name.eq_ignore_ascii_case("upgrade") && value.to_ascii_lowercase().contains("websocket") {
+            upgrade = true;
         }
     }
     let body = if body.len() >= content_length { &body[..content_length] } else { body };
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    let (status, payload) = route(method, path, query, body, &authorization, store, from, now);
+    if method == "GET" && path == "/signal" && upgrade && !websocket_key.is_empty() {
+        eprintln!("GET /signal 101");
+        return crate::signal::serve(stream, &websocket_key, registry);
+    }
+    let (status, payload) = route(method, path, query, body, &authorization, store, from, signal_url, registry, signer, now);
+    eprintln!("{method} {path} {status}");
     let response = if status == 204 {
         "HTTP/1.1 204\r\ncontent-length: 0\r\nconnection: close\r\n\r\n".to_string()
     } else {
@@ -99,10 +120,14 @@ fn route(
     authorization: &str,
     store: &Arc<Mutex<Store>>,
     from: &str,
+    signal_url: &str,
+    registry: &Arc<Registry>,
+    signer: &Arc<TicketSigner>,
     now: u64,
 ) -> (u16, String) {
     match (method, path) {
         ("GET", "/health/live") => (200, r#"{"status":"ok"}"#.to_string()),
+        ("GET", "/.well-known/jwks.json") => (200, signer.jwks().to_string()),
         ("POST", "/v1/auth/email/start") => start(body, store, from, now),
         ("POST", "/v1/auth/email/verify") => verify(body, store, now),
         // The phone sends device fields too. Verification still uses challengeId and code.
@@ -113,8 +138,178 @@ fn route(
         ("GET", "/v1/mobile-auth/devices") => list_devices(query, authorization, store, now),
         ("POST", "/v2/remote/hosts/register") => register_host(body, authorization, store, now),
         ("GET", "/v2/remote/hosts/") | ("GET", "/v2/remote/hosts") => list_hosts(authorization, store, now),
+        ("POST", "/v2/remote/sessions/") | ("POST", "/v2/remote/sessions") => {
+            start_remote_session(body, authorization, store, now)
+        }
+        _ if method == "POST" && path.starts_with("/v2/remote/sessions/") && path != "/v2/remote/sessions/" => {
+            session_post(path, body, authorization, signal_url, store, registry, signer, now)
+        }
+        ("GET", "/v1/mobile-auth/session") => mobile_session(authorization, store, now),
+        ("DELETE", "/v1/mobile-auth/session") => end_mobile_session(authorization, store, now),
+        ("GET", "/v1/mobile/features") => (
+            200,
+            r#"{"features":{"cloudServers":false,"browser":false},"latestVersion":null}"#.to_string(),
+        ),
+        ("GET", "/v2/hosting/servers/") | ("GET", "/v2/hosting/servers") => (
+            200,
+            r#"{"available":false,"lifecycleAvailable":false,"servers":[],"maxServers":0}"#.to_string(),
+        ),
+        _ if path.starts_with("/v2/hosting/servers/") => (
+            404,
+            error_body("hosted_server_not_found", "This host is not a cloud server."),
+        ),
+        ("POST", "/v1/mobile-auth/link") => create_link(body, authorization, store, now),
+        ("DELETE", "/v1/mobile-auth/link") => (204, String::new()),
         ("GET", "/v1/me") => me(authorization, store, now),
-        _ => (404, r#"{"error":"not_found"}"#.to_string()),
+        _ => match host_suffix(method, path) {
+            Some(("members", host_id)) => list_members(host_id, authorization, store, now),
+            Some(("ticket", host_id)) => issue_signal_ticket(host_id, body, signal_url, store, registry, now),
+            _ => (404, r#"{"error":"not_found"}"#.to_string()),
+        },
+    }
+}
+
+/** Host id between `/v2/remote/hosts/` and `/members/` or `/ticket`. */
+fn host_suffix<'a>(method: &str, path: &'a str) -> Option<(&'static str, &'a str)> {
+    let rest = path.strip_prefix("/v2/remote/hosts/")?;
+    if method == "GET" {
+        let host_id = rest.strip_suffix("/members/").or_else(|| rest.strip_suffix("/members"))?;
+        return Some(("members", host_id));
+    }
+    if method == "POST" {
+        let host_id = rest.strip_suffix("/ticket")?;
+        return Some(("ticket", host_id));
+    }
+    None
+}
+
+/** Routes a phone session action. `/ticket` mints Signal. `/end` drops the session. */
+fn session_post(
+    path: &str,
+    body: &str,
+    authorization: &str,
+    signal_url: &str,
+    store: &Arc<Mutex<Store>>,
+    registry: &Arc<Registry>,
+    signer: &Arc<TicketSigner>,
+    now: u64,
+) -> (u16, String) {
+    let Some((session_id, action)) = path
+        .strip_prefix("/v2/remote/sessions/")
+        .and_then(|rest| rest.rsplit_once('/'))
+        .filter(|(id, action)| !id.is_empty() && !id.contains('/') && (*action == "ticket" || *action == "end"))
+    else {
+        return (404, r#"{"error":"not_found"}"#.to_string());
+    };
+    if action == "end" {
+        return end_remote_session(session_id, authorization, store, now);
+    }
+    issue_session_ticket(session_id, body, authorization, signal_url, store, registry, signer, now)
+}
+
+/** Drops a phone session. HTTP 204 has an empty body. */
+fn end_remote_session(session_id: &str, authorization: &str, store: &Arc<Mutex<Store>>, now: u64) -> (u16, String) {
+    let mut guard = match store.lock() {
+        Ok(guard) => guard,
+        Err(_) => return (500, error_body("store_failed", "The account store is unavailable.")),
+    };
+    match auth::end_remote_session(&mut guard, bearer(authorization), session_id, now) {
+        AuthReply::Json(status, payload) => (status, payload),
+    }
+}
+
+/** Returns the phone user for a live bearer. */
+fn mobile_session(authorization: &str, store: &Arc<Mutex<Store>>, now: u64) -> (u16, String) {
+    let guard = match store.lock() {
+        Ok(guard) => guard,
+        Err(_) => return (500, error_body("store_failed", "The account store is unavailable.")),
+    };
+    match auth::mobile_session(&guard, bearer(authorization), now) {
+        AuthReply::Json(status, payload) => (status, payload),
+    }
+}
+
+/** Removes the phone bearer. HTTP 204 has an empty body. */
+fn end_mobile_session(authorization: &str, store: &Arc<Mutex<Store>>, now: u64) -> (u16, String) {
+    let mut guard = match store.lock() {
+        Ok(guard) => guard,
+        Err(_) => return (500, error_body("store_failed", "The account store is unavailable.")),
+    };
+    let Some(token) = bearer(authorization) else {
+        return (401, error_body("unauthorized", "Sign in is required."));
+    };
+    guard.sessions.remove(token);
+    let _ = now;
+    (204, String::new())
+}
+
+/** Issues the phone Signal ticket. */
+fn issue_session_ticket(
+    session_id: &str,
+    body: &str,
+    authorization: &str,
+    signal_url: &str,
+    store: &Arc<Mutex<Store>>,
+    registry: &Arc<Registry>,
+    signer: &Arc<TicketSigner>,
+    now: u64,
+) -> (u16, String) {
+    let client_public_key = json_string(body, "clientPublicKey").unwrap_or_default();
+    let guard = match store.lock() {
+        Ok(guard) => guard,
+        Err(_) => return (500, error_body("store_failed", "The account store is unavailable.")),
+    };
+    let parts = match auth::session_ticket_parts(&guard, bearer(authorization), session_id, &client_public_key, signal_url, now)
+    {
+        Ok(parts) => parts,
+        Err(AuthReply::Json(status, payload)) => return (status, payload),
+    };
+    drop(guard);
+    let claims = ClientTicketClaims {
+        host_id: parts.host_id.clone(),
+        session_id: parts.session_id.clone(),
+        user_id: parts.user_id.clone(),
+        membership_id: parts.membership_id.clone(),
+        role: parts.role.clone(),
+        auth_epoch: parts.auth_epoch,
+        session_expires_at: parts.session_expires_at,
+        client_public_key: parts.client_public_key.clone(),
+    };
+    let ticket = match signer.sign_client(&claims, now) {
+        Ok(ticket) => ticket,
+        Err(_) => return (500, error_body("store_failed", "The Signal ticket could not be created.")),
+    };
+    registry.register(
+        &ticket,
+        signal::TicketMeta {
+            host_id: parts.host_id.clone(),
+            peer: "client".to_string(),
+            session_id: parts.session_id,
+            user_id: parts.user_id,
+            membership_id: parts.membership_id,
+            role: parts.role,
+            session_expires_at: parts.session_expires_at,
+        },
+        now,
+    );
+    (
+        200,
+        format!(
+            r#"{{"ticket":"{ticket}","expiresAt":{},"signalUrl":"{signal_url}","hostId":"{}"}}"#,
+            parts.expires_at_ms, parts.host_id
+        ),
+    )
+}
+
+/** Opens a phone session. The body field is hostId. The bearer is the email session. */
+fn start_remote_session(body: &str, authorization: &str, store: &Arc<Mutex<Store>>, now: u64) -> (u16, String) {
+    let host_id = json_string(body, "hostId").unwrap_or_default();
+    let mut guard = match store.lock() {
+        Ok(guard) => guard,
+        Err(_) => return (500, r#"{"error":{"code":"store_failed","message":"The remote session could not be created."}}"#.to_string()),
+    };
+    match auth::start_remote_session(&mut guard, bearer(authorization), &host_id, now) {
+        AuthReply::Json(status, payload) => (status, payload),
     }
 }
 
@@ -215,6 +410,56 @@ fn register_host(body: &str, authorization: &str, store: &Arc<Mutex<Store>>, now
         &presented_token,
         now,
     ) {
+        AuthReply::Json(status, payload) => (status, payload),
+    }
+}
+
+/** Lists members of one host. The owner row is the only stored member. */
+fn list_members(host_id: &str, authorization: &str, store: &Arc<Mutex<Store>>, now: u64) -> (u16, String) {
+    let guard = match store.lock() {
+        Ok(guard) => guard,
+        Err(_) => return (500, error_body("store_failed", "The account store is unavailable.")),
+    };
+    match auth::list_host_members(&guard, bearer(authorization), host_id, now) {
+        AuthReply::Json(status, payload) => (status, payload),
+    }
+}
+
+/** Issues the Signal ticket the desktop host asks for before it can show a QR code. */
+fn issue_signal_ticket(
+    host_id: &str,
+    body: &str,
+    signal_url: &str,
+    store: &Arc<Mutex<Store>>,
+    registry: &Arc<Registry>,
+    now: u64,
+) -> (u16, String) {
+    let machine_token = json_string(body, "machineToken").unwrap_or_default();
+    let guard = match store.lock() {
+        Ok(guard) => guard,
+        Err(_) => return (500, error_body("store_failed", "The account store is unavailable.")),
+    };
+    match auth::issue_host_signal_ticket(&guard, host_id, &machine_token, signal_url, now) {
+        AuthReply::Json(status, payload) => {
+            if status == 200 {
+                if let Ok(ticket) = json_string(&payload, "ticket") {
+                    registry.register(&ticket, signal::host_meta(host_id), now);
+                }
+            }
+            (status, payload)
+        }
+    }
+}
+
+/** Creates a persistent Mobile Connect link token. */
+fn create_link(body: &str, authorization: &str, store: &Arc<Mutex<Store>>, now: u64) -> (u16, String) {
+    let host_id = json_string(body, "hostId").unwrap_or_default();
+    let fingerprint = json_string(body, "fingerprint").unwrap_or_default();
+    let guard = match store.lock() {
+        Ok(guard) => guard,
+        Err(_) => return (500, error_body("store_failed", "The account store is unavailable.")),
+    };
+    match auth::create_mobile_link(&guard, bearer(authorization), &host_id, &fingerprint, now) {
         AuthReply::Json(status, payload) => (status, payload),
     }
 }
@@ -324,8 +569,21 @@ fn json_string(body: &str, key: &str) -> Result<String, String> {
     let mut chars = rest.chars();
     while let Some(ch) = chars.next() {
         if ch == '\\' {
-            if let Some(next) = chars.next() {
-                out.push(next);
+            // A PEM public key arrives with `\n`. Pushing the letter n makes the desktop reject the ticket.
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('r') => out.push('\r'),
+                Some('t') => out.push('\t'),
+                Some('u') => {
+                    let mut hex = String::new();
+                    for _ in 0..4 {
+                        hex.push(chars.next().ok_or_else(|| "bad escape".to_string())?);
+                    }
+                    let code = u32::from_str_radix(&hex, 16).map_err(|_| "bad escape".to_string())?;
+                    out.push(char::from_u32(code).ok_or_else(|| "bad escape".to_string())?);
+                }
+                Some(next) => out.push(next),
+                None => return Err("bad escape".to_string()),
             }
         } else if ch == '"' {
             return Ok(out);

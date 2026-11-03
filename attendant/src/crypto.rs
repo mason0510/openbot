@@ -101,6 +101,100 @@ pub fn base64url(bytes: &[u8]) -> String {
     out
 }
 
+/** Encodes raw bytes as standard base64 with padding. Used for the WebSocket accept key. */
+pub fn base64_bytes(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    let mut index = 0;
+    while index + 3 <= bytes.len() {
+        let value = ((bytes[index] as u32) << 16) | ((bytes[index + 1] as u32) << 8) | bytes[index + 2] as u32;
+        out.push(TABLE[((value >> 18) & 63) as usize] as char);
+        out.push(TABLE[((value >> 12) & 63) as usize] as char);
+        out.push(TABLE[((value >> 6) & 63) as usize] as char);
+        out.push(TABLE[(value & 63) as usize] as char);
+        index += 3;
+    }
+    if index < bytes.len() {
+        let remain = bytes.len() - index;
+        let b0 = bytes[index] as u32;
+        let b1 = if remain == 2 { bytes[index + 1] as u32 } else { 0 };
+        let value = (b0 << 16) | (b1 << 8);
+        out.push(TABLE[((value >> 18) & 63) as usize] as char);
+        out.push(TABLE[((value >> 12) & 63) as usize] as char);
+        if remain == 2 {
+            out.push(TABLE[((value >> 6) & 63) as usize] as char);
+            out.push('=');
+        } else {
+            out.push('=');
+            out.push('=');
+        }
+    }
+    out
+}
+
+/** SHA-1 digest. Only the WebSocket handshake uses this. Account hashes stay SHA-256. */
+pub fn sha1(message: &[u8]) -> [u8; 20] {
+    fn rotl(value: u32, bits: u32) -> u32 {
+        value.rotate_left(bits)
+    }
+    let mut bits = (message.len() as u64) * 8;
+    let mut data = message.to_vec();
+    data.push(0x80);
+    while (data.len() % 64) != 56 {
+        data.push(0);
+    }
+    for _ in 0..8 {
+        data.push((bits & 0xff) as u8);
+        bits >>= 8;
+    }
+    let len = data.len();
+    data[len - 8..].reverse();
+    let mut state = [0x67452301_u32, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0];
+    for chunk in data.chunks(64) {
+        let mut words = [0_u32; 80];
+        for index in 0..16 {
+            words[index] = u32::from_be_bytes([
+                chunk[index * 4],
+                chunk[index * 4 + 1],
+                chunk[index * 4 + 2],
+                chunk[index * 4 + 3],
+            ]);
+        }
+        for index in 16..80 {
+            words[index] = rotl(words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16], 1);
+        }
+        let mut a = state[0];
+        let mut b = state[1];
+        let mut c = state[2];
+        let mut d = state[3];
+        let mut e = state[4];
+        for index in 0..80 {
+            let (f, k) = match index {
+                0..=19 => ((b & c) | (!b & d), 0x5a827999),
+                20..=39 => (b ^ c ^ d, 0x6ed9eba1),
+                40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1bbcdc),
+                _ => (b ^ c ^ d, 0xca62c1d6),
+            };
+            let temp = rotl(a, 5).wrapping_add(f).wrapping_add(e).wrapping_add(k).wrapping_add(words[index]);
+            e = d;
+            d = c;
+            c = rotl(b, 30);
+            b = a;
+            a = temp;
+        }
+        state[0] = state[0].wrapping_add(a);
+        state[1] = state[1].wrapping_add(b);
+        state[2] = state[2].wrapping_add(c);
+        state[3] = state[3].wrapping_add(d);
+        state[4] = state[4].wrapping_add(e);
+    }
+    let mut out = [0_u8; 20];
+    for (index, word) in state.iter().enumerate() {
+        out[index * 4..index * 4 + 4].copy_from_slice(&word.to_be_bytes());
+    }
+    out
+}
+
 /** Encodes UTF-8 as base64 for the mail subject. */
 pub fn base64(text: &str) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

@@ -11,7 +11,9 @@ mod auth;
 mod crypto;
 mod dns;
 mod http;
+mod jwt;
 mod mail;
+mod signal;
 mod store;
 
 use std::env;
@@ -32,16 +34,23 @@ fn main() {
     let bind = env::var("ATTENDANT_BIND").unwrap_or_else(|_| "127.0.0.1:8791".to_string());
     let data = env::var("ATTENDANT_DATA").unwrap_or_else(|_| "/srv/attendant/data".to_string());
     let from = env::var("ATTENDANT_FROM").unwrap_or_else(|_| "noreply@attendant.mwcpool.uk".to_string());
-    let store = Arc::new(Mutex::new(open_store(&PathBuf::from(&data)).expect("open account store")));
+    let signal_url = env::var("ATTENDANT_SIGNAL_URL").unwrap_or_else(|_| "wss://api-attendant.mwcpool.uk/signal".to_string());
+    let data_path = PathBuf::from(&data);
+    let store = Arc::new(Mutex::new(open_store(&data_path).expect("open account store")));
+    let registry = Arc::new(signal::Registry::new());
+    let signer = Arc::new(jwt::TicketSigner::open(&data_path).expect("open ticket signer"));
     let listener = TcpListener::bind(&bind).expect("bind");
     eprintln!("attendant-api listening on {bind}");
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
         let store = Arc::clone(&store);
         let from = from.clone();
+        let signal_url = signal_url.clone();
+        let registry = Arc::clone(&registry);
+        let signer = Arc::clone(&signer);
         thread::spawn(move || {
             let now = now_secs();
-            if let Err(error) = http::handle(stream, &store, &from, now) {
+            if let Err(error) = http::handle(stream, &store, &from, &signal_url, &registry, &signer, now) {
                 eprintln!("request failed: {error}");
             }
         });

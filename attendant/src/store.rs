@@ -34,6 +34,15 @@ pub struct TicketRecord {
     pub created: u64,
 }
 
+/** One phone session on a desktop host. The map key is `session_id`. It is not written to the TSV. */
+#[derive(Clone)]
+pub struct RemoteSessionRecord {
+    pub session_id: String,
+    pub host_id: String,
+    pub email: String,
+    pub created: u64,
+}
+
 /** One desktop host owned by an email. The map key is `host_id`. */
 #[derive(Clone)]
 pub struct HostRecord {
@@ -54,6 +63,7 @@ pub struct Store {
     pub sessions: HashMap<String, SessionRecord>,
     pub tickets: HashMap<String, TicketRecord>,
     pub hosts: HashMap<String, HostRecord>,
+    pub remote_sessions: HashMap<String, RemoteSessionRecord>,
 }
 
 /** Opens the lock file and holds it until the process exits. A second process cannot start. */
@@ -73,6 +83,7 @@ pub fn open_store(data_dir: &Path) -> Result<Store, String> {
         sessions: HashMap::new(),
         tickets: HashMap::new(),
         hosts: HashMap::new(),
+        remote_sessions: HashMap::new(),
     };
     store.load()?;
     Ok(store)

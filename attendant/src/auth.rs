@@ -1,6 +1,6 @@
 use crate::crypto::{base64url, code_hash, hex_encode, random_bytes, same_bytes, sha256, user_id};
 use crate::mail::send_code;
-use crate::store::{CodeRecord, SessionRecord, Store, CODE_TTL_SECS};
+use crate::store::{CodeRecord, RemoteSessionRecord, SessionRecord, Store, CODE_TTL_SECS};
 
 const SESSION_TTL_SECS: u64 = 30 * 24 * 3600;
 const RESEND_GAP_SECS: u64 = 60;
@@ -202,9 +202,54 @@ fn hex_token(bytes: &[u8]) -> String {
     crate::crypto::hex_encode(bytes)
 }
 
-/** Escapes an email for a JSON string. The store never contains quotes. */
+/** Escapes one JSON string. A PEM newline must survive the phone's parser. */
 fn json_escape(text: &str) -> String {
-    text.replace('\\', "\\\\").replace('"', "\\\"")
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/**
+ * device_public_key_pem: Returns a PEM the phone can decode.
+ * Guarantees: a key stored by the old parser, which kept the letter n in place of each JSON newline,
+ * is restored to a two-line SPKI PEM. A key that already has newlines is unchanged.
+ * Refusals: none. An unrecognized value is returned as stored.
+ * Boundaries: does not check the signature.
+ */
+fn device_public_key_pem(stored: &str) -> String {
+    if stored.contains('\n') {
+        return stored.to_string();
+    }
+    const HEADER: &str = "-----BEGIN PUBLIC KEY-----";
+    const FOOTER: &str = "-----END PUBLIC KEY-----";
+    // The old parser turned each JSON `\n` into the letter n, including one after the footer.
+    let text = if stored.ends_with('n') && !stored.ends_with(FOOTER) {
+        &stored[..stored.len() - 1]
+    } else {
+        stored
+    };
+    let Some(rest) = text.strip_prefix(HEADER) else {
+        return stored.to_string();
+    };
+    let Some(body) = rest.strip_suffix(FOOTER) else {
+        return stored.to_string();
+    };
+    if body.len() >= 2 && body.starts_with('n') && body.ends_with('n') {
+        let encoded = &body[1..body.len() - 1];
+        if encoded.len() == 60 {
+            return format!("{HEADER}\n{encoded}\n{FOOTER}");
+        }
+    }
+    stored.to_string()
 }
 
 /** Issues one Mobile Connect ticket for the desktop session.
@@ -359,7 +404,7 @@ pub fn list_remote_hosts(store: &Store, token: Option<&str>, now: u64) -> AuthRe
         let key = if row.device_public_key.is_empty() {
             "null".to_string()
         } else {
-            format!("\"{}\"", json_escape(&row.device_public_key))
+            format!("\"{}\"", json_escape(&device_public_key_pem(&row.device_public_key)))
         };
         hosts.push_str(&format!(
             r#"{{"hostId":"{}","name":"{}","logoKey":null,"devicePublicKey":{key},"keyHandovers":[],"authEpoch":{},"membershipId":"{}","role":"owner"}}"#,
@@ -371,6 +416,264 @@ pub fn list_remote_hosts(store: &Store, token: Option<&str>, now: u64) -> AuthRe
     }
     hosts.push(']');
     AuthReply::Json(200, format!(r#"{{"hosts":{hosts}}}"#))
+}
+
+/**
+ * list_host_members: Returns the owner row for one registered host.
+ * Guarantee: The signed-in owner gets one active owner member. createdAt is unix milliseconds.
+ * Refusal: 401 without a session, 400 for a bad host id, 404 if this email has no such host, 409 if another email owns it.
+ * Boundary: Revoked members are not stored, so the list is never a revoked row.
+ */
+pub fn list_host_members(store: &Store, token: Option<&str>, host_id: &str, now: u64) -> AuthReply {
+    let Some(email) = session_email(store, token, now) else {
+        return api_error(401, "unauthorized", "A desktop session is required.");
+    };
+    let Some(row) = owned_host(store, &email, host_id) else {
+        return host_lookup_error(store, host_id);
+    };
+    let created_at = row.created.saturating_mul(1000);
+    AuthReply::Json(
+        200,
+        format!(
+            r#"{{"members":[{{"membershipId":"{}","email":"{}","name":"{}","avatarUrl":null,"role":"owner","status":"active","createdAt":{created_at}}}]}}"#,
+            row.membership_id,
+            json_escape(&row.email),
+            json_escape(&row.name)
+        ),
+    )
+}
+
+/**
+ * issue_host_signal_ticket: Mints a host Signal ticket for the machine token of that host.
+ * Guarantee: Success is ticket, expiresAt in unix milliseconds, and the configured wss signalUrl.
+ * Refusal: 400 if the token or host id is empty or the signal URL is not wss, 401 if the token does not match, 404 if the host is unknown.
+ * Boundary: Does not open the Signal socket. A desktop that cannot reach signalUrl still will not show a QR code.
+ */
+pub fn issue_host_signal_ticket(
+    store: &Store,
+    host_id: &str,
+    machine_token: &str,
+    signal_url: &str,
+    now: u64,
+) -> AuthReply {
+    if !valid_host_id(host_id) || machine_token.is_empty() || !signal_url.starts_with("wss://") || signal_url.contains('"')
+    {
+        return api_error(400, "invalid_remote_request", "The host credential is invalid.");
+    }
+    let Some(row) = store.hosts.get(host_id) else {
+        return api_error(404, "remote_host_missing", "This host is not registered.");
+    };
+    if machine_token != row.machine_token {
+        return api_error(401, "stale_machine_token", "The remote host credential does not match.");
+    }
+    let ticket = match random_bytes(32) {
+        Ok(bytes) => base64url(&bytes),
+        Err(_) => return api_error(500, "store_failed", "The Signal ticket could not be created."),
+    };
+    let expires_at = now.saturating_add(86_400).saturating_mul(1000);
+    AuthReply::Json(
+        200,
+        format!(r#"{{"ticket":"{ticket}","expiresAt":{expires_at},"signalUrl":"{signal_url}"}}"#),
+    )
+}
+
+/**
+ * create_mobile_link: Returns a new persistent Mobile Connect token for this host.
+ * Guarantee: link matches [A-Za-z0-9_-] and is 43 characters. createdAt is unix milliseconds.
+ * Refusal: 401 without a session, 400 if hostId or fingerprint is invalid, 409 if another email owns the host.
+ * Boundary: The token is not written to the TSV. The desktop stores the returned link.
+ */
+pub fn create_mobile_link(store: &Store, token: Option<&str>, host_id: &str, fingerprint: &str, now: u64) -> AuthReply {
+    let Some(email) = session_email(store, token, now) else {
+        return api_error(401, "unauthorized", "A desktop session is required.");
+    };
+    if !valid_host_id(host_id) || !valid_fingerprint(fingerprint) {
+        return api_error(400, "invalid_mobile_host", "The Mobile Connect host is invalid.");
+    }
+    if let Some(row) = store.hosts.get(host_id) {
+        if row.email != email {
+            return api_error(409, "remote_host_taken", "This host is registered to another account.");
+        }
+    }
+    let link = match random_bytes(32) {
+        Ok(bytes) => base64url(&bytes),
+        Err(_) => return api_error(500, "store_failed", "The Mobile Connect link could not be created."),
+    };
+    let created_at = now.saturating_mul(1000);
+    AuthReply::Json(200, format!(r#"{{"link":"{link}","createdAt":{created_at}}}"#))
+}
+
+const REMOTE_SESSION_TTL_SECS: u64 = 86_400;
+
+/**
+ * Starts a phone session on one desktop host.
+ *
+ * Guarantees: the same email and hostId reuse one live session. expiresAt is unix milliseconds,
+ * 24 hours after created. Success is HTTP 201.
+ * Refuses: 401 without a live bearer, 400 for a bad hostId, 404 for an unknown host, 403 when
+ * another email owns the host.
+ * Does not write the row to the TSV, and does not issue the Signal ticket.
+ */
+pub fn start_remote_session(store: &mut Store, token: Option<&str>, host_id: &str, now: u64) -> AuthReply {
+    let Some(email) = session_email(store, token, now) else {
+        return api_error(401, "unauthorized", "Sign in is required.");
+    };
+    if !valid_host_id(host_id) {
+        return api_error(400, "invalid_remote_request", "The host ID is invalid.");
+    }
+    let Some(host) = store.hosts.get(host_id) else {
+        return api_error(404, "remote_host_missing", "This host is not registered.");
+    };
+    if host.email != email {
+        return api_error(403, "forbidden", "This account cannot open that host.");
+    }
+    if let Some(record) = store.remote_sessions.values().find(|record| record.email == email && record.host_id == host_id)
+    {
+        if now < record.created.saturating_add(REMOTE_SESSION_TTL_SECS) {
+            let expires_at = record.created.saturating_add(REMOTE_SESSION_TTL_SECS).saturating_mul(1000);
+            return AuthReply::Json(
+                201,
+                format!(
+                    r#"{{"sessionId":"{}","hostId":"{}","expiresAt":{expires_at}}}"#,
+                    record.session_id, record.host_id
+                ),
+            );
+        }
+    }
+    store
+        .remote_sessions
+        .retain(|_, record| record.email != email || record.host_id != host_id);
+    let session_id = match random_bytes(16) {
+        Ok(bytes) => base64url(&bytes),
+        Err(_) => return api_error(500, "store_failed", "The remote session could not be created."),
+    };
+    store.remote_sessions.insert(
+        session_id.clone(),
+        RemoteSessionRecord {
+            session_id: session_id.clone(),
+            host_id: host_id.to_string(),
+            email,
+            created: now,
+        },
+    );
+    let expires_at = now.saturating_add(REMOTE_SESSION_TTL_SECS).saturating_mul(1000);
+    AuthReply::Json(
+        201,
+        format!(r#"{{"sessionId":"{session_id}","hostId":"{host_id}","expiresAt":{expires_at}}}"#),
+    )
+}
+
+/** Claims the desktop must see in both the JWT and the Signal `peer-ready` frame. Times are seconds. */
+pub struct SessionTicketParts {
+    pub host_id: String,
+    pub session_id: String,
+    pub user_id: String,
+    pub membership_id: String,
+    pub role: String,
+    pub auth_epoch: u64,
+    pub session_expires_at: u64,
+    pub client_public_key: String,
+    pub expires_at_ms: u64,
+}
+
+/**
+ * session_ticket_parts: Checks that this bearer may open Signal for the session.
+ * Guarantees: the parts name the host that owns the session, role `owner`, and the same expiry
+ * the desktop will compare. `session_expires_at` is unix seconds.
+ * Refuses: 401 without a live bearer, 400 for a bad client key, 403 for a missing or foreign
+ * session, 404 when the host row is gone, 500 when Signal is not a wss URL.
+ * Does not sign the JWT and does not open the socket.
+ */
+pub fn session_ticket_parts(
+    store: &Store,
+    token: Option<&str>,
+    session_id: &str,
+    client_public_key: &str,
+    signal_url: &str,
+    now: u64,
+) -> Result<SessionTicketParts, AuthReply> {
+    let Some(email) = session_email(store, token, now) else {
+        return Err(api_error(401, "unauthorized", "Sign in is required."));
+    };
+    // PEM uses newlines. Other controls are still refused.
+    if client_public_key.is_empty()
+        || client_public_key.len() > 8_192
+        || client_public_key.chars().any(|ch| ch.is_control() && ch != '\n' && ch != '\r')
+    {
+        return Err(api_error(400, "invalid_remote_request", "The client public key is required."));
+    }
+    if !signal_url.starts_with("wss://") || signal_url.contains('"') {
+        return Err(api_error(500, "store_failed", "The Signal address is not configured."));
+    }
+    let Some(record) = store.remote_sessions.get(session_id) else {
+        return Err(api_error(403, "session_inactive", "The remote session is not active."));
+    };
+    if record.email != email || now >= record.created.saturating_add(REMOTE_SESSION_TTL_SECS) {
+        return Err(api_error(403, "session_inactive", "The remote session is not active."));
+    }
+    let Some(host) = store.hosts.get(&record.host_id) else {
+        return Err(api_error(404, "remote_host_missing", "This host is not registered."));
+    };
+    let session_expires_at = record.created.saturating_add(REMOTE_SESSION_TTL_SECS);
+    Ok(SessionTicketParts {
+        host_id: record.host_id.clone(),
+        session_id: record.session_id.clone(),
+        user_id: user_id(&email),
+        membership_id: host.membership_id.clone(),
+        role: "owner".to_string(),
+        auth_epoch: host.auth_epoch,
+        session_expires_at,
+        client_public_key: client_public_key.to_string(),
+        expires_at_ms: session_expires_at.saturating_mul(1000),
+    })
+}
+
+/**
+ * Ends one phone session.
+ *
+ * Guarantees: a bearer that owns the session removes it and returns HTTP 204. An unknown session
+ * also returns 204, so a retry does not fail.
+ * Refuses: 401 without a live bearer, 403 when another account owns the session.
+ * Does not close an open Signal socket.
+ */
+pub fn end_remote_session(store: &mut Store, token: Option<&str>, session_id: &str, now: u64) -> AuthReply {
+    let Some(email) = session_email(store, token, now) else {
+        return api_error(401, "unauthorized", "Sign in is required.");
+    };
+    if let Some(record) = store.remote_sessions.get(session_id) {
+        if record.email != email {
+            return api_error(403, "forbidden", "This account cannot end that session.");
+        }
+    }
+    store.remote_sessions.remove(session_id);
+    AuthReply::Json(204, String::new())
+}
+
+/**
+ * Returns the signed-in phone user.
+ *
+ * Guarantees: a live bearer gets the same user object as `/v1/me`.
+ * Refuses: 401 when the bearer is missing or expired.
+ */
+pub fn mobile_session(store: &Store, token: Option<&str>, now: u64) -> AuthReply {
+    current_user(store, token, now)
+}
+
+/** A registered host owned by this email, or none. */
+fn owned_host<'a>(store: &'a Store, email: &str, host_id: &str) -> Option<&'a crate::store::HostRecord> {
+    let row = store.hosts.get(host_id)?;
+    if row.email == email { Some(row) } else { None }
+}
+
+/** 400, 404, or 409 for a host id that this session cannot list. */
+fn host_lookup_error(store: &Store, host_id: &str) -> AuthReply {
+    if !valid_host_id(host_id) {
+        return api_error(400, "invalid_mobile_host", "The Mobile Connect host ID is invalid.");
+    }
+    if store.hosts.contains_key(host_id) {
+        return api_error(409, "remote_host_taken", "This host is registered to another account.");
+    }
+    api_error(404, "remote_host_missing", "This host is not registered.")
 }
 
 /**

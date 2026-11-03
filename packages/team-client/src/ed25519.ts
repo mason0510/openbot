@@ -70,8 +70,27 @@ function encodePublicKeyPem(publicKey: Uint8Array): string {
   return `${PUBLIC_KEY_HEADER}\n${lines.join("\n")}\n${PUBLIC_KEY_FOOTER}`;
 }
 
-function decodePublicKeyPem(pem: string): Uint8Array {
+/**
+ * Attendant's old JSON parser kept the letter n from each `\n` in the host PEM,
+ * including one after the footer. A normal PEM is unchanged.
+ * Guarantees a SPKI PEM only for that exact 60-character body. Does not accept
+ * any other flattened text.
+ */
+function restoreFlattenedPem(pem: string): string {
   const trimmed = pem.trim();
+  if (trimmed.includes("\n")) return trimmed;
+  let text = trimmed;
+  if (text.endsWith("n") && !text.endsWith(PUBLIC_KEY_FOOTER)) text = text.slice(0, -1);
+  if (!text.startsWith(PUBLIC_KEY_HEADER) || !text.endsWith(PUBLIC_KEY_FOOTER)) return trimmed;
+  const body = text.slice(PUBLIC_KEY_HEADER.length, -PUBLIC_KEY_FOOTER.length);
+  if (!(body.startsWith("n") && body.endsWith("n"))) return trimmed;
+  const encoded = body.slice(1, -1);
+  if (encoded.length !== 60 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded)) return trimmed;
+  return `${PUBLIC_KEY_HEADER}\n${encoded}\n${PUBLIC_KEY_FOOTER}`;
+}
+
+function decodePublicKeyPem(pem: string): Uint8Array {
+  const trimmed = restoreFlattenedPem(pem);
   if (!trimmed.startsWith(PUBLIC_KEY_HEADER) || !trimmed.endsWith(PUBLIC_KEY_FOOTER)) {
     throw new Error("The server returned an invalid Ed25519 public key.");
   }

@@ -127,6 +127,7 @@ import { RoutineWake } from "./routine-wake";
 import { takeServerModeEnvironment } from "./server-mode";
 import { configureContentSecurityPolicy, configureRendererPermissions } from "./session-configuration";
 import { trustSystemCertificates } from "./system-certificates";
+import { applyStartupChromiumProxy } from "./system-http-proxy";
 import { TeardownRegistry } from "./teardown-registry";
 import type { TraceFile } from "./trace-file";
 import { setIpcCallObserver } from "./trusted-ipc";
@@ -219,7 +220,10 @@ const developmentRemoteDebuggingPort = !app.isPackaged
 const analyticsCaptureUrl = !app.isPackaged ? readAnalyticsCaptureUrl(process.env.OPENBOT_ANALYTICS_CAPTURE_URL) : null;
 // Electron exposes FedCM without an account chooser, so every request fails with a NetworkError.
 // Sites such as Google Sign-In use FedCM when it exists and fall back to their popup when it does not.
-app.commandLine.appendSwitch("disable-features", "FedCm");
+// Host candidates must be the LAN address. A .local name does not resolve on the phone.
+app.commandLine.appendSwitch("disable-features", "FedCm,WebRtcHideLocalIpsWithMdns");
+// Before ready: a scheme-specific session rule can leave the Signal `wss` socket on DIRECT.
+applyStartupChromiumProxy();
 if (developmentRemoteDebuggingPort) {
   app.commandLine.appendSwitch("remote-debugging-port", developmentRemoteDebuggingPort);
   app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");

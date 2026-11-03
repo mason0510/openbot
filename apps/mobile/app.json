@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "OpenBot",
+    "name": "slavebot",
     "slug": "openbot",
     "platforms": ["ios", "android"],
     "version": "1.4.5",

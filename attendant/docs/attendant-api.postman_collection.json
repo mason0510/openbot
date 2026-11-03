@@ -1,0 +1,1589 @@
+{
+  "info": {
+    "_postman_id": "attendant-api-mwcpool-2026-11-03",
+    "name": "Attendant API",
+    "description": "# Attendant API\n\n自建账号服务。桌面 Slavebot 和手机用它登录、登记电脑、出手机连接票、出 Signal 票。聊天正文、文件和命令不经过这台服务。回复来自电脑上的本地模型。\n\n公网入口 `https://api-attendant.mwcpool.uk`。Caddy 反代到 Angel 上的 `127.0.0.1:8791`。账号行在 `/srv/attendant/data/accounts.tsv`。远程会话和 Signal 票只在进程内存里。\n\n不要把请求打到 `api.openbot.run` 或 `signal.openbot.run`。`https://api.attendant.mwcpool.uk` 不是当前入口。\n\n## 调用顺序\n\n1. `POST /v1/auth/email/start`，再 `POST /v1/auth/email/verify`。保存 `sessionToken`。\n2. 桌面 `POST /v2/remote/hosts/register`。保存 `machineToken`。\n3. 桌面 `POST /v2/remote/hosts/{{hostId}}/ticket`，用 `machineToken`。再用这张票做 Signal `hello`，`peer` 为 `host`。\n4. 手机 `GET /v2/remote/hosts/`，再 `POST /v2/remote/sessions/`。保存 `sessionId`。\n5. 手机 `POST /v2/remote/sessions/{{sessionId}}/ticket`，带 Ed25519 `clientPublicKey`。再用这张 JWT 做 Signal `hello`，`peer` 为 `client`。\n6. 电脑先收到 `peer-ready`，手机再收到 `ready`。WebRTC 由两端自己建，不由本服务转发媒体。\n\n## 通用约定\n\n- HTTP/1.1。一个连接一个请求，响应后关闭。不支持 chunked。正文最多 64 KiB，须带 `Content-Length`。服务不检查 `Content-Type`，仍请送 `application/json`。\n- 需要登录的接口使用 `Authorization: Bearer {{sessionToken}}`。邮箱会话 30 天。\n- 时间有两种单位。`expiresAt`、`resendAt`、`createdAt` 是 Unix 毫秒。JWT 和 `peer-ready` 里的 `sessionExpiresAt` 是 Unix 秒。桌面会把秒乘 1000。\n- 邮箱接口的失败是 `{\"error\":\"invalid_email\"}`。主机、手机票、远程会话的失败是 `{\"error\":{\"code\":\"...\",\"message\":\"...\"}}`。未知路径是 `{\"error\":\"not_found\"}`。\n- 成功的 204 没有正文。\n\n## 注意事项\n\n- 重启 attendant 会清掉内存里的远程会话和 Signal 票。下一张旧票会 403 或 Signal `authentication_required`。重新走会话和出票。账号行和邮箱会话还在。\n- `devicePublicKey` 若含真换行、引号或反斜杠，登记主机会 400。库里旧行可能把 JSON `\\n` 存成字母 `n`。手机正在跑的 Metro 包用 `restoreFlattenedPem` 还原。没带这个函数的安装包会报无效 Ed25519 公钥。\n- `ready` 里的 `iceServers` 现为 `stun:stun.miwifi.com:3478`。这台小米 WebView 解析主机名会得到 -105，IPv4 字面地址也会被拒绝。能通的手机包在收到 `ready` 后用 `withLanIpv6Stun` 换成电脑的 IPv6 STUN。本集合不改这条服务端地址。\n- `GET /v2/hosting/servers/{id}/wake` 以及该前缀下的其他路径返回 404。这台电脑不是云主机。忽略这个 404。\n- 客户端 JWT 的 `aud` 必须是 `openbot-remote`。不要加 `signal` 声明。`clientPublicKey` 必须和手机 hello 后发出的公钥逐字相同，含 PEM 换行。\n- 集合变量里不要填入真实 `machineToken`、会话票或 PEM 后再分享本文件。\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api-attendant.mwcpool.uk"
+    },
+    {
+      "key": "sessionToken",
+      "value": ""
+    },
+    {
+      "key": "challengeId",
+      "value": ""
+    },
+    {
+      "key": "hostId",
+      "value": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "key": "sessionId",
+      "value": ""
+    },
+    {
+      "key": "machineToken",
+      "value": ""
+    },
+    {
+      "key": "lastTicket",
+      "value": ""
+    },
+    {
+      "key": "mobileLink",
+      "value": ""
+    },
+    {
+      "key": "fingerprint",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "key": "deviceId",
+      "value": "00000000-0000-4000-8000-000000000001"
+    }
+  ],
+  "item": [
+    {
+      "name": "健康与公钥",
+      "item": [
+        {
+          "name": "GET /health/live",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health/live",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health",
+                "live"
+              ],
+              "query": []
+            },
+            "description": "探活。不需要登录。\n\n输入：无正文，无查询参数。\n\n输出 200：`{\"status\":\"ok\"}`。\n\n失败：进程没起来时连接失败，不是 JSON。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 ok",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"status\":\"ok\"}",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/health/live",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "health",
+                    "live"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /.well-known/jwks.json",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/.well-known/jwks.json",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                ".well-known",
+                "jwks.json"
+              ],
+              "query": []
+            },
+            "description": "桌面用来验手机 Signal 票的公钥。不需要登录。没有私钥。\n\n输入：无。\n\n输出 200：一个 P-256 密钥。`kid` 为 `attendant-1`，`alg` 为 `ES256`，`use` 为 `sig`。`x` 和 `y` 是公钥坐标。\n\n失败：签名密钥打不开时进程起不来，这个路径不会单独返回错误 JSON。\n\n注意：不要把响应里的坐标写进日志以外的公开帖。它是公钥，仍不要随手转发。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 jwks",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"keys\":[{\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"kid\":\"attendant-1\",\"x\":\"<base64url>\",\"y\":\"<base64url>\"}]}",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/.well-known/jwks.json",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    ".well-known",
+                    "jwks.json"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "邮箱登录",
+      "item": [
+        {
+          "name": "POST /v1/auth/email/start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/email/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "email",
+                "start"
+              ],
+              "query": []
+            },
+            "description": "发 8 位登录码。桌面和手机都走这条。不需要登录。\n\n输入 JSON：\n- `email`：必填。去首尾空白后转小写。本地部分和域名都不能空，域名须含 `.`，总长不超过 254。拒绝空白、控制字符、引号、反斜杠。中文可以留在本地部分。\n\n输出 200：\n- `challengeId`：这次挑战的 id。\n- `expiresAt`：Unix 毫秒。发出后 600 秒。\n- `resendAt`：Unix 毫秒。发出后 60 秒。\n\n60 秒内对同一邮箱再调，返回同一个 `challengeId`，不发第二封信。\n\n失败：\n- 400 `{\"error\":\"invalid_email\"}`\n- 500 `{\"error\":\"mail_failed\"}`：SMTP 拒绝或存储失败。码行只在信被接受后写入。\n- 503 `{\"error\":\"rate_limit\"}`：这封码还活着，且已经错满 5 次。\n\n码字符集不含 `0`、`1`、`I`、`O`。可带或不带一个连字符。明文不入库。",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.sessionToken) pm.collectionVariables.set('sessionToken', body.sessionToken);",
+                  "if (body.challengeId) pm.collectionVariables.set('challengeId', body.challengeId);",
+                  "if (body.hostId) pm.collectionVariables.set('hostId', body.hostId);",
+                  "if (body.machineToken) pm.collectionVariables.set('machineToken', body.machineToken);",
+                  "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+                  "if (body.ticket) pm.collectionVariables.set('lastTicket', body.ticket);",
+                  "if (body.link) pm.collectionVariables.set('mobileLink', body.link);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 challenge",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"challengeId\":\"<hex>\",\"expiresAt\":1793700000000,\"resendAt\":1793696460000}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v1/auth/email/start",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "auth",
+                    "email",
+                    "start"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /v1/auth/email/verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/email/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "email",
+                "verify"
+              ],
+              "query": []
+            },
+            "description": "用挑战 id 和码换会话。桌面走 `/v1/auth/email/verify`。手机走 `/v1/mobile-auth/email/verify`。两条是同一个处理函数。不需要登录。手机多送的设备字段会被忽略。\n\n输入 JSON：\n- `challengeId`：必填。来自上一步。\n- `code`：8 位。可写 `ABCD-EFGH` 或小写。服务去掉连字符和空白后比对。\n\n不要送邮箱。服务用 `challengeId` 找回邮箱。\n\n输出 200：\n- `sessionToken`：随后放进 `Authorization: Bearer`。\n- `user.id`：邮箱的 SHA-256 十六进制。\n- `user.email`\n- `user.name`：`null`\n- `user.avatarUrl`：`null`\n- `user.analyticsEnabled`：`null`\n\n失败，均为 `{\"error\":\"<code>\"}`：\n- 400 `invalid_challenge`、`invalid_code`、`code_expired`\n- 404 `no_code`\n- 429 `too_many_attempts`：含本次在内满 5 次。\n- 500 `mail_failed`\n\n成功后这封码作废。会话 30 天。",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"challengeId\": \"{{challengeId}}\",\n  \"code\": \"ABCD-EFGH\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.sessionToken) pm.collectionVariables.set('sessionToken', body.sessionToken);",
+                  "if (body.challengeId) pm.collectionVariables.set('challengeId', body.challengeId);",
+                  "if (body.hostId) pm.collectionVariables.set('hostId', body.hostId);",
+                  "if (body.machineToken) pm.collectionVariables.set('machineToken', body.machineToken);",
+                  "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+                  "if (body.ticket) pm.collectionVariables.set('lastTicket', body.ticket);",
+                  "if (body.link) pm.collectionVariables.set('mobileLink', body.link);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 session",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"sessionToken\":\"<hex>\",\"user\":{\"id\":\"<sha256 hex>\",\"email\":\"user@example.com\",\"name\":null,\"avatarUrl\":null,\"analyticsEnabled\":null}}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v1/auth/email/verify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "auth",
+                    "email",
+                    "verify"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /v1/mobile-auth/email/verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/mobile-auth/email/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "mobile-auth",
+                "email",
+                "verify"
+              ],
+              "query": []
+            },
+            "description": "用挑战 id 和码换会话。桌面走 `/v1/auth/email/verify`。手机走 `/v1/mobile-auth/email/verify`。两条是同一个处理函数。不需要登录。手机多送的设备字段会被忽略。\n\n输入 JSON：\n- `challengeId`：必填。来自上一步。\n- `code`：8 位。可写 `ABCD-EFGH` 或小写。服务去掉连字符和空白后比对。\n\n不要送邮箱。服务用 `challengeId` 找回邮箱。\n\n输出 200：\n- `sessionToken`：随后放进 `Authorization: Bearer`。\n- `user.id`：邮箱的 SHA-256 十六进制。\n- `user.email`\n- `user.name`：`null`\n- `user.avatarUrl`：`null`\n- `user.analyticsEnabled`：`null`\n\n失败，均为 `{\"error\":\"<code>\"}`：\n- 400 `invalid_challenge`、`invalid_code`、`code_expired`\n- 404 `no_code`\n- 429 `too_many_attempts`：含本次在内满 5 次。\n- 500 `mail_failed`\n\n成功后这封码作废。会话 30 天。\n\n与桌面校验的输入输出相同。",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"challengeId\": \"{{challengeId}}\",\n  \"code\": \"ABCD-EFGH\",\n  \"deviceId\": \"{{deviceId}}\",\n  \"deviceName\": \"phone\",\n  \"platform\": \"android\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.sessionToken) pm.collectionVariables.set('sessionToken', body.sessionToken);",
+                  "if (body.challengeId) pm.collectionVariables.set('challengeId', body.challengeId);",
+                  "if (body.hostId) pm.collectionVariables.set('hostId', body.hostId);",
+                  "if (body.machineToken) pm.collectionVariables.set('machineToken', body.machineToken);",
+                  "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+                  "if (body.ticket) pm.collectionVariables.set('lastTicket', body.ticket);",
+                  "if (body.link) pm.collectionVariables.set('mobileLink', body.link);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "当前用户",
+      "item": [
+        {
+          "name": "GET /v1/me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "me"
+              ],
+              "query": []
+            },
+            "description": "当前桌面用户。需要 Bearer。\n\n输入：无正文。\n\n输出 200：用户对象本身，没有外层包装。字段与校验成功时的 `user` 相同。\n\n失败：\n- 401 `{\"error\":\"missing_token\"}`：没有 Bearer。\n- 401 `{\"error\":\"invalid_token\"}`：未知或超过 30 天。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 user",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"id\":\"<sha256 hex>\",\"email\":\"user@example.com\",\"name\":null,\"avatarUrl\":null,\"analyticsEnabled\":null}",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v1/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "me"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /v1/mobile-auth/session",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/mobile-auth/session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "mobile-auth",
+                "session"
+              ],
+              "query": []
+            },
+            "description": "当前手机用户。需要 Bearer。返回与 `GET /v1/me` 相同的用户对象。\n\n输入：无正文。\n\n输出 200：用户对象。\n\n失败：401，嵌套错误，`code` 为 `unauthorized`。缺票和过期都是这一句。",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "DELETE /v1/mobile-auth/session",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/mobile-auth/session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "mobile-auth",
+                "session"
+              ],
+              "query": []
+            },
+            "description": "丢掉当前 Bearer。需要登录。\n\n输入：无正文。\n\n输出 204：空正文。\n\n失败：401 `{\"error\":{\"code\":\"unauthorized\",\"message\":\"Sign in is required.\"}}`。\n\n注意：只删内存和存储里的这张会话。不关已经打开的 Signal。",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "手机连接票",
+      "item": [
+        {
+          "name": "POST /v1/mobile-auth/ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/mobile-auth/ticket",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "mobile-auth",
+                "ticket"
+              ],
+              "query": []
+            },
+            "description": "桌面为一台电脑发一次性手机连接码。需要 Bearer。明文码不入库，只存 SHA-256。\n\n输入 JSON：\n- `hostId`：1 到 128 字符，仅字母、数字、连字符。\n- `fingerprint`：正好 43 个 base64url 字符。\n\n同一邮箱和同一 `hostId` 只留一张活码。新码替换旧码。\n\n输出 200：\n- `ticket`：43 字符 base64url。\n- `expiresAt`：Unix 毫秒。120 秒。\n\n失败，嵌套 `error`：\n- 401 `unauthorized`\n- 400 `invalid_mobile_host`\n- 409 `mobile_host_mismatch`：这个 `hostId` 的活码属于另一个邮箱。\n- 500 `store_failed`\n",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hostId\": \"{{hostId}}\",\n  \"fingerprint\": \"{{fingerprint}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.sessionToken) pm.collectionVariables.set('sessionToken', body.sessionToken);",
+                  "if (body.challengeId) pm.collectionVariables.set('challengeId', body.challengeId);",
+                  "if (body.hostId) pm.collectionVariables.set('hostId', body.hostId);",
+                  "if (body.machineToken) pm.collectionVariables.set('machineToken', body.machineToken);",
+                  "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+                  "if (body.ticket) pm.collectionVariables.set('lastTicket', body.ticket);",
+                  "if (body.link) pm.collectionVariables.set('mobileLink', body.link);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 ticket",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"ticket\":\"<43 base64url>\",\"expiresAt\":1793700120000}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v1/mobile-auth/ticket",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "mobile-auth",
+                    "ticket"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /v1/mobile-auth/ticket",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/mobile-auth/ticket?host={{hostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "mobile-auth",
+                "ticket"
+              ],
+              "query": [
+                {
+                  "key": "host",
+                  "value": "{{hostId}}"
+                }
+              ]
+            },
+            "description": "取消这台电脑上当前邮箱的手机连接码。需要 Bearer。没有活码也返回成功。\n\n输入查询参数：\n- `host`：必填。规则同 `hostId`。\n\n输出 204：空正文。\n\n失败：\n- 401 `unauthorized`\n- 400 `invalid_mobile_host`\n- 500 `store_failed`\n\n不取消别人的码。",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "POST /v1/mobile-auth/redeem",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/mobile-auth/redeem",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "mobile-auth",
+                "redeem"
+              ],
+              "query": []
+            },
+            "description": "手机用连接码换会话。不需要旧 Bearer。码只用一次。\n\n输入 JSON，四项都必填：\n- `ticket`：32 到 128 字符，仅字母、数字、`_`、`-`。发出的码是 43 字符。\n- `deviceId`：UUID 第 4 版。第 15 位是 `4`，第 20 位是 `8`、`9`、`a` 或 `b`。\n- `deviceName`：去掉首尾空白后 1 到 80 个字符，不能有控制字符。中文可以。\n- `platform`：只能是 `ios`、`android`、`unknown`。\n\n设备字段不合法时，码不消耗。未知、过期或第二次使用返回 401，不建会话。\n\n输出 200：\n- `sessionToken`\n- `user`：与邮箱校验相同。\n- `host.hostId`\n- `host.fingerprint`\n\n失败，嵌套 `error`：\n- 400 `invalid_mobile_ticket`：缺字段，或 `platform` 不在允许列表。\n- 400 `invalid_mobile_device`：设备 id 或名字不合法。\n- 401 `invalid_mobile_ticket`：码未知、过期或已用。\n- 500 `store_failed`：建会话失败时会把码放回去。",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ticket\": \"{{lastTicket}}\",\n  \"deviceId\": \"{{deviceId}}\",\n  \"deviceName\": \"MI 9\",\n  \"platform\": \"android\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.sessionToken) pm.collectionVariables.set('sessionToken', body.sessionToken);",
+                  "if (body.challengeId) pm.collectionVariables.set('challengeId', body.challengeId);",
+                  "if (body.hostId) pm.collectionVariables.set('hostId', body.hostId);",
+                  "if (body.machineToken) pm.collectionVariables.set('machineToken', body.machineToken);",
+                  "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+                  "if (body.ticket) pm.collectionVariables.set('lastTicket', body.ticket);",
+                  "if (body.link) pm.collectionVariables.set('mobileLink', body.link);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 redeemed",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"sessionToken\":\"<hex>\",\"user\":{\"id\":\"<sha256 hex>\",\"email\":\"user@example.com\",\"name\":null,\"avatarUrl\":null,\"analyticsEnabled\":null},\"host\":{\"hostId\":\"00000000-0000-4000-8000-000000000001\",\"fingerprint\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v1/mobile-auth/redeem",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "mobile-auth",
+                    "redeem"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /v1/mobile-auth/devices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/mobile-auth/devices?host={{hostId}}&includeDesktop=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "mobile-auth",
+                "devices"
+              ],
+              "query": [
+                {
+                  "key": "host",
+                  "value": "{{hostId}}"
+                },
+                {
+                  "key": "includeDesktop",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "列出手机。当前存储没有设备列。需要 Bearer。\n\n输入查询参数：\n- `host`：电脑 id。`includeDesktop=true` 且 `host` 为空时可以不送。\n- `includeDesktop`：`true` 或省略。\n\n输出 200：\n- 只问某台电脑：`{\"devices\":[]}`。未登记的合法 `host` 也是空列表。\n- `includeDesktop=true` 且没有 `host`：`{\"sessions\":[]}`。\n\n失败：\n- 401 `unauthorized`\n- 400 `invalid_mobile_host`\n- 409 `remote_host_taken`：这台电脑属于另一个邮箱。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 empty devices",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"devices\":[]}",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v1/mobile-auth/devices",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "mobile-auth",
+                    "devices"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /v1/mobile-auth/link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/mobile-auth/link",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "mobile-auth",
+                "link"
+              ],
+              "query": []
+            },
+            "description": "发一条持久手机连接链。需要 Bearer。链不写入 TSV，由桌面自己保存。\n\n输入 JSON：\n- `hostId`：规则同登记。\n- `fingerprint`：正好 43 个 base64url 字符。\n\n输出 200：\n- `link`：43 字符，字符集 `[A-Za-z0-9_-]`。\n- `createdAt`：Unix 毫秒。\n\n失败：\n- 401 `unauthorized`\n- 400 `invalid_mobile_host`\n- 409 `remote_host_taken`\n- 500 `store_failed`\n",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hostId\": \"{{hostId}}\",\n  \"fingerprint\": \"{{fingerprint}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.sessionToken) pm.collectionVariables.set('sessionToken', body.sessionToken);",
+                  "if (body.challengeId) pm.collectionVariables.set('challengeId', body.challengeId);",
+                  "if (body.hostId) pm.collectionVariables.set('hostId', body.hostId);",
+                  "if (body.machineToken) pm.collectionVariables.set('machineToken', body.machineToken);",
+                  "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+                  "if (body.ticket) pm.collectionVariables.set('lastTicket', body.ticket);",
+                  "if (body.link) pm.collectionVariables.set('mobileLink', body.link);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /v1/mobile-auth/link",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/mobile-auth/link",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "mobile-auth",
+                "link"
+              ],
+              "query": []
+            },
+            "description": "当前实现直接返回 204，不读登录头，不删任何行。\n\n输入：无。\n\n输出 204：空正文。\n\n注意：这不是注销。持久链如果在桌面本地，仍要由桌面自己丢掉。",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "电脑主机",
+      "item": [
+        {
+          "name": "POST /v2/remote/hosts/register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v2/remote/hosts/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v2",
+                "remote",
+                "hosts",
+                "register"
+              ],
+              "query": []
+            },
+            "description": "登记或更新一台电脑。需要 Bearer。一台 `hostId` 只属于一个邮箱。\n\n输入 JSON：\n- `hostId`：1 到 128，仅字母、数字、连字符。\n- `name`：1 到 80。不能含制表符、换行、引号、反斜杠。\n- `ownerMembershipId`：可空。非空时不超过 128，仅字母、数字、`_`、`-`。不合法时服务用邮箱和 hostId 派生 32 位十六进制。\n- `devicePublicKey`：Ed25519 SPKI PEM。不能含真换行、回车、引号、反斜杠、制表符，且不超过 4096 字符。带真换行的 PEM 会 400，旧行不会被这次请求改掉。\n- `machineToken`：更新时送上一次返回的值。首次登记可空。\n- `rotateCredential`：`true` 时换新的 `machineToken`。\n\n同一邮箱再次登记同一 `hostId` 是原地更新。公钥变了，`authEpoch` 加 1，最小为 1。\n\n输出 200：\n- `hostId`\n- `name`\n- `membershipId`\n- `authEpoch`\n- `machineToken`：64 位十六进制。桌面拿它换 Signal 主机票。\n\n失败，嵌套 `error`：\n- 401 `unauthorized`\n- 401 `stale_machine_token`：更新时送了不匹配的旧凭证。\n- 400 `invalid_remote_host`\n- 409 `remote_host_taken`\n- 500 `store_failed`\n\n注意：示例公钥不能用来连接。不要对已经在用的电脑发送本请求，否则会改掉库里的公钥。把 `machineToken` 留在变量里之后，不要导出分享。",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hostId\": \"{{hostId}}\",\n  \"name\": \"lab-host\",\n  \"ownerMembershipId\": \"\",\n  \"devicePublicKey\": \"placeholder-not-a-key\",\n  \"machineToken\": \"{{machineToken}}\",\n  \"rotateCredential\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.sessionToken) pm.collectionVariables.set('sessionToken', body.sessionToken);",
+                  "if (body.challengeId) pm.collectionVariables.set('challengeId', body.challengeId);",
+                  "if (body.hostId) pm.collectionVariables.set('hostId', body.hostId);",
+                  "if (body.machineToken) pm.collectionVariables.set('machineToken', body.machineToken);",
+                  "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+                  "if (body.ticket) pm.collectionVariables.set('lastTicket', body.ticket);",
+                  "if (body.link) pm.collectionVariables.set('mobileLink', body.link);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 registered",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"hostId\":\"00000000-0000-4000-8000-000000000001\",\"name\":\"lab-host\",\"membershipId\":\"<32 hex>\",\"authEpoch\":1,\"machineToken\":\"<64 hex>\"}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v2/remote/hosts/register",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v2",
+                    "remote",
+                    "hosts",
+                    "register"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /v2/remote/hosts/",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v2/remote/hosts/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v2",
+                "remote",
+                "hosts"
+              ],
+              "query": []
+            },
+            "description": "列出当前邮箱的电脑。`/v2/remote/hosts` 与带斜杠的路径相同。需要 Bearer。\n\n输入：无正文。\n\n输出 200：`hosts` 数组。每项有 `hostId`、`name`、`logoKey`（恒为 null）、`devicePublicKey`、`keyHandovers`（恒为空数组）、`authEpoch`、`membershipId`、`role`（恒为 `owner`）。没有公钥时 `devicePublicKey` 为 null。\n\n源码会把旧的字母 `n` PEM 读成两行 PEM。当次手机能通，不依赖这条读出修复已经装上。\n\n失败：401 `unauthorized`。别人的电脑不会出现。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 hosts",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"hosts\":[{\"hostId\":\"00000000-0000-4000-8000-000000000001\",\"name\":\"lab-host\",\"logoKey\":null,\"devicePublicKey\":null,\"keyHandovers\":[],\"authEpoch\":1,\"membershipId\":\"<32 hex>\",\"role\":\"owner\"}]}",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v2/remote/hosts/",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v2",
+                    "remote",
+                    "hosts"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /v2/remote/hosts/{{hostId}}/members/",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v2/remote/hosts/{{hostId}}/members/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v2",
+                "remote",
+                "hosts",
+                "{{hostId}}",
+                "members"
+              ],
+              "query": []
+            },
+            "description": "一台电脑的成员。当前只返回所有者一行。`/members` 与 `/members/` 相同。需要 Bearer。\n\n输入：路径里的 `hostId`。\n\n输出 200：`members` 含 `membershipId`、`email`、`name`、`avatarUrl`（null）、`role`（`owner`）、`status`（`active`）、`createdAt`（Unix 毫秒）。\n\n失败：\n- 401 `unauthorized`\n- 400 `invalid_mobile_host`\n- 404 `remote_host_missing`\n- 409 `remote_host_taken`",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "POST /v2/remote/hosts/{{hostId}}/ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v2/remote/hosts/{{hostId}}/ticket",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v2",
+                "remote",
+                "hosts",
+                "{{hostId}}",
+                "ticket"
+              ],
+              "query": []
+            },
+            "description": "桌面用机器凭证换 Signal 主机票。不读 Bearer。票登记在内存里，重启即失效。\n\n输入 JSON：\n- `machineToken`：登记时返回的 64 位十六进制。\n\n路径 `hostId` 须已登记。服务配置的 Signal 地址须以 `wss://` 开头。\n\n输出 200：\n- `ticket`：base64url。\n- `expiresAt`：Unix 毫秒。从现在起 86400 秒。\n- `signalUrl`：例如 `wss://api-attendant.mwcpool.uk/signal`。\n\n失败：\n- 400 `invalid_remote_request`\n- 401 `stale_machine_token`\n- 404 `remote_host_missing`\n- 500 `store_failed`\n\n下一步：用这张 `ticket` 做 WebSocket `hello`，`peer` 必须是 `host`。主机票不会收到 `peer-ready`。",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"machineToken\": \"{{machineToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.sessionToken) pm.collectionVariables.set('sessionToken', body.sessionToken);",
+                  "if (body.challengeId) pm.collectionVariables.set('challengeId', body.challengeId);",
+                  "if (body.hostId) pm.collectionVariables.set('hostId', body.hostId);",
+                  "if (body.machineToken) pm.collectionVariables.set('machineToken', body.machineToken);",
+                  "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+                  "if (body.ticket) pm.collectionVariables.set('lastTicket', body.ticket);",
+                  "if (body.link) pm.collectionVariables.set('mobileLink', body.link);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 host signal ticket",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"ticket\":\"<base64url>\",\"expiresAt\":1793786400000,\"signalUrl\":\"wss://api-attendant.mwcpool.uk/signal\"}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v2/remote/hosts/{{hostId}}/ticket",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v2",
+                    "remote",
+                    "hosts",
+                    "{{hostId}}",
+                    "ticket"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "手机远程会话",
+      "item": [
+        {
+          "name": "POST /v2/remote/sessions/",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v2/remote/sessions/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v2",
+                "remote",
+                "sessions"
+              ],
+              "query": []
+            },
+            "description": "手机对一台已登记电脑开会话。`/v2/remote/sessions` 相同。需要 Bearer。行只在内存里。同一邮箱和同一 `hostId` 在 24 小时内复用同一 `sessionId`。\n\n输入 JSON：\n- `hostId`：必填。\n\n输出 201：\n- `sessionId`：22 字符左右的 base64url。\n- `hostId`\n- `expiresAt`：Unix 毫秒。创建后 24 小时。\n\n失败：\n- 401 `unauthorized`\n- 400 `invalid_remote_request`\n- 404 `remote_host_missing`\n- 403 `forbidden`：电脑属于另一个邮箱。\n- 500 嵌套 `store_failed`\n\n不写 TSV。不出 Signal 票。重启后这条会话消失，再用旧 `sessionId` 出票会 403。",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hostId\": \"{{hostId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.sessionToken) pm.collectionVariables.set('sessionToken', body.sessionToken);",
+                  "if (body.challengeId) pm.collectionVariables.set('challengeId', body.challengeId);",
+                  "if (body.hostId) pm.collectionVariables.set('hostId', body.hostId);",
+                  "if (body.machineToken) pm.collectionVariables.set('machineToken', body.machineToken);",
+                  "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+                  "if (body.ticket) pm.collectionVariables.set('lastTicket', body.ticket);",
+                  "if (body.link) pm.collectionVariables.set('mobileLink', body.link);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "201 session",
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"sessionId\":\"<base64url>\",\"hostId\":\"00000000-0000-4000-8000-000000000001\",\"expiresAt\":1793786400000}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v2/remote/sessions/",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v2",
+                    "remote",
+                    "sessions"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /v2/remote/sessions/{{sessionId}}/ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v2/remote/sessions/{{sessionId}}/ticket",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v2",
+                "remote",
+                "sessions",
+                "{{sessionId}}",
+                "ticket"
+              ],
+              "query": []
+            },
+            "description": "手机用会话换 ES256 JWT，并在内存里登记为客户端票。需要 Bearer。\n\n输入 JSON：\n- `clientPublicKey`：必填。Ed25519 SPKI PEM。允许换行和回车。其他控制字符拒绝。空或超过 8192 字符拒绝。JSON 里的换行写成 `\\n`。服务会把它还原成真换行再签进 JWT。\n\n输出 200：\n- `ticket`：三段 JWT。头 `alg=ES256`，`kid=attendant-1`。\n- `expiresAt`：Unix 毫秒。与会话到期相同。\n- `signalUrl`\n- `hostId`\n\nJWT 载荷：\n- `aud`：`openbot-remote`\n- `jti`\n- `sessionId`、`hostId`、`userId`、`membershipId`\n- `role`：`owner`\n- `authEpoch`\n- `protocolMinimum` 与 `protocolMaximum`：都是 2\n- `sessionExpiresAt`：Unix 秒。必须与随后 `peer-ready` 里的秒数相同。\n- `clientPublicKey`：与输入逐字相同。\n- `iat`、`exp`：秒。`exp` 不超过会话到期。\n\n不要加 `signal` 声明。\n\n失败：\n- 401 `unauthorized`\n- 400 `invalid_remote_request`：公钥缺失或含不允许的控制字符。\n- 403 `session_inactive`：会话不存在、不属于这个邮箱、已过期，或进程重启后内存已空。\n- 404 `remote_host_missing`\n- 500 `store_failed`：Signal 地址不是 `wss://`，或签名失败。\n\n下一步：`hello` 的 `peer` 必须是 `client`，`token` 是这张 JWT。",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientPublicKey\": \"-----BEGIN PUBLIC KEY-----\\nMCowBQYDK2VwAyEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\\n-----END PUBLIC KEY-----\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.sessionToken) pm.collectionVariables.set('sessionToken', body.sessionToken);",
+                  "if (body.challengeId) pm.collectionVariables.set('challengeId', body.challengeId);",
+                  "if (body.hostId) pm.collectionVariables.set('hostId', body.hostId);",
+                  "if (body.machineToken) pm.collectionVariables.set('machineToken', body.machineToken);",
+                  "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+                  "if (body.ticket) pm.collectionVariables.set('lastTicket', body.ticket);",
+                  "if (body.link) pm.collectionVariables.set('mobileLink', body.link);"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 client jwt",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"ticket\":\"<header>.<payload>.<sig>\",\"expiresAt\":1793786400000,\"signalUrl\":\"wss://api-attendant.mwcpool.uk/signal\",\"hostId\":\"00000000-0000-4000-8000-000000000001\"}",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v2/remote/sessions/{{sessionId}}/ticket",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v2",
+                    "remote",
+                    "sessions",
+                    "{{sessionId}}",
+                    "ticket"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /v2/remote/sessions/{{sessionId}}/end",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v2/remote/sessions/{{sessionId}}/end",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v2",
+                "remote",
+                "sessions",
+                "{{sessionId}}",
+                "end"
+              ],
+              "query": []
+            },
+            "description": "结束一条手机远程会话。需要 Bearer。未知会话也返回 204，便于重试。\n\n输入：路径里的 `sessionId`。正文可空。\n\n输出 204：空正文。\n\n失败：\n- 401 `unauthorized`\n- 403 `forbidden`：会话属于另一个邮箱。\n\n不关闭已经打开的 Signal 套接字。",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "功能与托管",
+      "item": [
+        {
+          "name": "GET /v1/mobile/features",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/mobile/features",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "mobile",
+                "features"
+              ],
+              "query": []
+            },
+            "description": "手机功能开关。不需要登录。固定响应，不读账号。\n\n输入：无。\n\n输出 200：`cloudServers` 与 `browser` 为 false，`latestVersion` 为 null。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 features",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"features\":{\"cloudServers\":false,\"browser\":false},\"latestVersion\":null}",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v1/mobile/features",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v1",
+                    "mobile",
+                    "features"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /v2/hosting/servers/",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v2/hosting/servers/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v2",
+                "hosting",
+                "servers"
+              ],
+              "query": []
+            },
+            "description": "云主机列表。不需要登录。这台部署没有云主机。`/v2/hosting/servers` 相同。\n\n输入：无。\n\n输出 200：`available` 与 `lifecycleAvailable` 为 false，`servers` 为空，`maxServers` 为 0。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 no hosting",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"available\":false,\"lifecycleAvailable\":false,\"servers\":[],\"maxServers\":0}",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v2/hosting/servers/",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v2",
+                    "hosting",
+                    "servers"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /v2/hosting/servers/{{hostId}}/wake",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v2/hosting/servers/{{hostId}}/wake",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v2",
+                "hosting",
+                "servers",
+                "{{hostId}}",
+                "wake"
+              ],
+              "query": []
+            },
+            "description": "任何落在 `/v2/hosting/servers/` 后面的路径都返回 404。手机唤醒云主机时会打到这里。\n\n输入：路径任意，例如 `/wake`。方法不限，本请求用 GET。\n\n输出 404：`{\"error\":{\"code\":\"hosted_server_not_found\",\"message\":\"This host is not a cloud server.\"}}`\n\n注意：这是预期结果。不要把它当成 Signal 或登录失败。",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "404 not a cloud host",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\"error\":{\"code\":\"hosted_server_not_found\",\"message\":\"This host is not a cloud server.\"}}",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/v2/hosting/servers/{{hostId}}/wake",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "v2",
+                    "hosting",
+                    "servers",
+                    "{{hostId}}",
+                    "wake"
+                  ],
+                  "query": []
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Signal",
+      "item": [
+        {
+          "name": "GET /signal",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Upgrade",
+                "value": "websocket"
+              },
+              {
+                "key": "Connection",
+                "value": "Upgrade"
+              },
+              {
+                "key": "Sec-WebSocket-Key",
+                "value": "dGhlIHNhbXBsZSBub25jZQ=="
+              },
+              {
+                "key": "Sec-WebSocket-Version",
+                "value": "13"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/signal",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "signal"
+              ],
+              "query": []
+            },
+            "description": "Signal 是 WebSocket，不是普通 JSON POST。Postman 请改用 WebSocket 请求，地址 `wss://api-attendant.mwcpool.uk/signal`。下面的 HTTP 头只说明升级条件。\n\n升级条件：`GET /signal`，`Upgrade: websocket`，`Sec-WebSocket-Key` 非空。成功是 `101 Switching Protocols`。\n\n第一条文本帧必须是 hello：\n\n```json\n{\"type\":\"hello\",\"version\":1,\"token\":\"<ticket>\",\"peer\":\"host\"}\n```\n\n手机把 `peer` 写成 `client`，`token` 用会话 JWT。`peer` 必须和出票时登记的角色相同。\n\n电脑 hello 成功后，服务在房间里等待。手机若先到，收到：\n\n```json\n{\"type\":\"host-waiting\",\"version\":1,\"resumeToken\":\"<base64url>\"}\n```\n\n两端都在房间后，服务先给电脑：\n\n```json\n{\"type\":\"peer-ready\",\"version\":1,\"connectionId\":\"<id>\",\"sessionId\":\"<id>\",\"userId\":\"<sha256>\",\"membershipId\":\"<id>\",\"role\":\"owner\",\"sessionExpiresAt\":1793786400,\"resumed\":false}\n```\n\n`sessionExpiresAt` 是秒。然后给手机：\n\n```json\n{\"type\":\"ready\",\"version\":1,\"connectionId\":\"<id>\",\"resumeToken\":\"<base64url>\",\"iceServers\":[{\"urls\":\"stun:stun.miwifi.com:3478\"}]}\n```\n\n之后的帧原样转发给房间里的另一端。本服务不创建 WebRTC。\n\n失败帧：\n\n```json\n{\"type\":\"error\",\"version\":1,\"code\":\"authentication_required\",\"message\":\"The Signal ticket is not valid.\"}\n```\n\n其他 `code`：`invalid_message`。hello 不是第一条，或 `peer` 与票不一致。\n\n注意：重启后旧票无效。`resumeToken` 可代替原票再次 hello。这台手机的 WebView 用不了 `ready` 里的 STUN 主机名，正在跑的 Metro 包会换成电脑的 IPv6 STUN。",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

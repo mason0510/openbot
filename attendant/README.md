@@ -2,7 +2,7 @@
 
 自己的账号 API。桌面和手机用它登录、出手机连接票、登记电脑主机。不依赖 OpenBot 官方账号服务。
 
-实现是 Rust，只用标准库，没有 crates。进程绑 `127.0.0.1`，前面放反向代理。公网入口是 `https://api.attendant.mwcpool.uk`。
+实现是 Rust，只用标准库，没有 crates。进程绑 `127.0.0.1`，前面放反向代理。公网入口是 `https://api-attendant.mwcpool.uk`。对外接口见 [docs/api.md](docs/api.md)。
 
 仓库没有许可证文件。不要再加回 `LICENSE`。
 
@@ -28,6 +28,8 @@
 | `src/dns.rs` | MX / A 查询 |
 | `scripts/android-debug-pack.sh` | 手机调试包：检查、链接、打包、重打包、转发 |
 | `.grok/workflows/android-debug-pack.rhai` | 上面脚本的 workflow |
+| `docs/api.md` | 对外接口说明 |
+| `docs/attendant-api.postman_collection.json` | 可导入的 Postman 集合 |
 | `docs/DEVELOPMENT.md` | 这次排障的经过和下一条缺口 |
 
 ## 三条算法

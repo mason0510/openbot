@@ -8,6 +8,7 @@ import { Deferred, Effect, Exit, Fiber, Scope } from "effect";
 import { BrowserWindow, MessageChannelMain, type MessagePortMain } from "electron";
 import { z } from "zod";
 import { RemoteWorkflowError, remoteCall, remoteDecode } from "./remote-service-effects";
+import { ensureChromiumProxy } from "./system-http-proxy";
 
 export type TeamWebRtcChannel = "rpc" | "events" | "files" | "desktop";
 
@@ -252,6 +253,7 @@ export class TeamWebRtcBridge extends EventEmitter<TeamWebRtcBridgeEvents> {
     );
     this.#window = window;
     yield* remoteDecode(() => window.webContents.setWindowOpenHandler(() => ({ action: "deny" })));
+    yield* remoteCall(() => ensureChromiumProxy(window.webContents.session));
     yield* remoteCall(() =>
       this.#options.developmentUrl
         ? window.loadURL(new URL("team-webrtc.html", `${this.#options.developmentUrl}/`).toString())
