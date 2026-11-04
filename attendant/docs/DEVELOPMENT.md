@@ -153,3 +153,16 @@
 6. 自建 Signal / TURN。没有它，聊天仍依赖电脑官方主机的实时通道。
 
 新路由继续嵌套错误。不要改邮箱字符串错误。不要给 `SESS` 加列，除非明确放弃旧二进制回滚。
+
+
+## TURN（跨网中继）
+
+Attendant Signal 可选接入与官方 `remote/api` 同款的 coturn 长效票据：
+
+- 必填成对：`TURN_HOST`、`TURN_SHARED_SECRET`
+- 可选：`TURN_PORT`（默认 3478）、`TURN_TLS_PORT`（默认 5349）、`TURN_CREDENTIAL_TTL_SECONDS`（默认 3600）
+- 未设置时：`ready` / `ice-servers` 只发主机 `address-update` 的局域网 STUN
+- 已设置时：先发 `stun` + `turn`/`turns`（HMAC-SHA1），再附加局域网 STUN
+- `GET /health/turn` 查看是否已配置（永不回传密钥）
+
+跨网受限场景见上游 issue #2665 / #3898；凭证过期导致 CreatePermission 403 见 #4736（客户端应 `turn-refresh`）。

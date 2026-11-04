@@ -132,6 +132,31 @@ pub fn base64_bytes(bytes: &[u8]) -> String {
     out
 }
 
+/** HMAC-SHA1. Used for coturn long-term credentials (`TURN_SHARED_SECRET`). */
+pub fn hmac_sha1(key: &[u8], message: &[u8]) -> [u8; 20] {
+    const BLOCK: usize = 64;
+    let mut key_block = [0_u8; BLOCK];
+    if key.len() > BLOCK {
+        key_block[..20].copy_from_slice(&sha1(key));
+    } else {
+        key_block[..key.len()].copy_from_slice(key);
+    }
+    let mut ipad = [0x36_u8; BLOCK];
+    let mut opad = [0x5c_u8; BLOCK];
+    for index in 0..BLOCK {
+        ipad[index] ^= key_block[index];
+        opad[index] ^= key_block[index];
+    }
+    let mut inner = Vec::with_capacity(BLOCK + message.len());
+    inner.extend_from_slice(&ipad);
+    inner.extend_from_slice(message);
+    let inner_digest = sha1(&inner);
+    let mut outer = Vec::with_capacity(BLOCK + 20);
+    outer.extend_from_slice(&opad);
+    outer.extend_from_slice(&inner_digest);
+    sha1(&outer)
+}
+
 /** SHA-1 digest. Only the WebSocket handshake uses this. Account hashes stay SHA-256. */
 pub fn sha1(message: &[u8]) -> [u8; 20] {
     fn rotl(value: u32, bits: u32) -> u32 {
@@ -312,12 +337,26 @@ pub fn sha256(message: &[u8]) -> [u8; 32] {
 
 #[cfg(test)]
 mod tests {
-    use super::{hex_encode, sha256};
+    use super::{base64_bytes, hex_encode, hmac_sha1, sha256};
 
     /** The empty digest pins the SHA-256 implementation. */
     #[test]
     fn sha256_empty() {
         let digest = hex_encode(&sha256(b""));
         assert_eq!(digest, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    }
+
+    /** RFC 2202 case 2 pins HMAC-SHA1 for coturn credentials. */
+    #[test]
+    fn hmac_sha1_rfc2202_case2() {
+        let digest = hex_encode(&hmac_sha1(b"Jefe", b"what do ya want for nothing?"));
+        assert_eq!(digest, "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79");
+    }
+
+    /** Base64 form matches Node createHmac('sha1').digest('base64'). */
+    #[test]
+    fn hmac_sha1_turn_style_base64() {
+        let digest = base64_bytes(&hmac_sha1(b"secret", b"3600:sess"));
+        assert_eq!(digest, "SOYErEzOl8W8WKbDXwMipWyo45Q=");
     }
 }

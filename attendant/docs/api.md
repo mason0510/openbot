@@ -384,9 +384,23 @@ JWT 载荷：
   "version": 1,
   "connectionId": "<id>",
   "resumeToken": "<base64url>",
-  "iceServers": [{"urls": "stun:stun.miwifi.com:3478"}]
+  "iceServers": [
+    {"urls": "stun:<TURN_HOST>:3478"},
+    {
+      "urls": [
+        "turn:<TURN_HOST>:3478?transport=udp",
+        "turn:<TURN_HOST>:3478?transport=tcp",
+        "turns:<TURN_HOST>:5349?transport=tcp"
+      ],
+      "username": "<expirationSeconds>:<sessionId>",
+      "credential": "<hmac-sha1-base64>"
+    },
+    {"urls": "stun:<lan-ipv4>:3478"}
+  ]
 }
 ```
+
+当未设置 `TURN_HOST` + `TURN_SHARED_SECRET` 时，`iceServers` 只含主机 `address-update` 发布的局域网 STUN（每族最多一条）；两者都未发布时列表可为空。设置后与官方 Signal 同形：先 STUN/TURN/TURNS 中继票据，再附加局域网 STUN。`username` 为 `expiration:sessionId`（主机票无 sessionId 时用 `hostId`），`credential` 为 `HMAC-SHA1(TURN_SHARED_SECRET, username)` 的标准 Base64。默认凭证 TTL 3600 秒（可用 `TURN_CREDENTIAL_TTL_SECONDS` 覆盖）；客户端可发 `turn-refresh` 再取一帧带新票据的 `ready`。
 
 之后的帧原样转发给房间里的另一端。本服务不创建 WebRTC。`resumeToken` 可代替原票再次 hello。
 
@@ -403,6 +417,6 @@ JWT 载荷：
 - 重启后，内存里的远程会话和 Signal 票作废。账号和邮箱会话还在。重新开会话并出票。
 - 登记主机时不要发送含真换行的 PEM。那次请求会 `400`，库里的旧公钥保持不变。
 - 读取主机列表时，调用方要能接受字母 `n` 代替换行的旧公钥。否则 Ed25519 校验失败，界面仍显示连接失败。
-- `ready.iceServers` 是 STUN 主机名。部分手机 WebView 解析该名字会失败，IPv4 字面地址也会被拒绝。这类客户端须在收到 `ready` 后换成自己能拨通、且对端会回 Binding 的 STUN 地址。空的 `iceServers` 会被客户端拒绝。
+- `ready.iceServers`：配置了 `TURN_HOST` + `TURN_SHARED_SECRET` 时含官方同款 TURN 中继；另附主机 `address-update` 的局域网 STUN。未配置 TURN 时仅局域网 STUN。空的 `iceServers` 会被客户端拒绝。凭证勿写入日志。`GET /health/turn` 只报告是否已配置（不含密钥）。
 - 客户端 JWT 的 `aud` 必须是 `openbot-remote`。`clientPublicKey` 必须和后续认证帧里的公钥逐字相同。
 - `machineToken`、`sessionToken`、Signal 票和私钥不要写入日志、截图或对外转发的副本。

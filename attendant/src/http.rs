@@ -127,6 +127,7 @@ fn route(
 ) -> (u16, String) {
     match (method, path) {
         ("GET", "/health/live") => (200, r#"{"status":"ok"}"#.to_string()),
+        ("GET", "/health/turn") => (200, signal::turn_health_json()),
         ("GET", "/.well-known/jwks.json") => (200, signer.jwks().to_string()),
         ("POST", "/v1/auth/email/start") => start(body, store, from, now),
         ("POST", "/v1/auth/email/verify") => verify(body, store, now),
