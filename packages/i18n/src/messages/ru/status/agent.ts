@@ -26,6 +26,7 @@ export const messages = {
     "Сделать снимок области экрана {x}, {y}, {width} × {height} точек и отправить изображение модели агента.",
   "status.agent.screenCaptureProgress": "Запрос снимка экрана…",
   "status.agent.screenCaptureReviewing": "Просмотр снимка экрана…",
+  "status.agent.screenCaptureShown": "Снимок рабочего стола · {source} · {width}×{height}",
   "status.agent.browserOpening": "Открытие веб-страницы…",
   "status.agent.browserReading": "Чтение веб-страницы…",
   "status.agent.browserClicking": "Нажатие на веб-странице…",

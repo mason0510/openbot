@@ -123,6 +123,9 @@ export const messages = defineMessages("mobile.chat", {
   "mobile.chat.attachment.files": "Files",
   "mobile.chat.attachment.photos": "Photos",
   "mobile.chat.attachment.camera": "Camera",
+  "mobile.chat.attachment.desktopScreenshot": "Desktop screenshot",
+  "mobile.chat.desktopScreenshot.request":
+    "Capture the current desktop screen with capture_screen and show the screenshot in this chat. Then give a short summary of what is on screen.",
   "mobile.chat.attachment.useSkill": "Use skill or app",
   "mobile.chat.attachment.addFailed": "Could not add attachment",
   "mobile.chat.attachment.limit": "You can attach up to {limit} files.",

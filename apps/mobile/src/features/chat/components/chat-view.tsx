@@ -1254,6 +1254,7 @@ export function ChatView({
             liquidGlassAvailable={liquidGlassAvailable}
             onClose={attachments.closeMenu}
             onUseSkill={mentionSkills?.length ? () => setSkillPickerVersion((version) => version + 1) : undefined}
+            onDesktopScreenshot={() => sendMessage(t("mobile.chat.desktopScreenshot.request"))}
             progress={menuProgress}
           />
         ) : null}

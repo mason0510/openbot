@@ -125,6 +125,9 @@ export const messages = {
   "mobile.chat.attachment.files": "Dosyalar",
   "mobile.chat.attachment.photos": "Fotoğraflar",
   "mobile.chat.attachment.camera": "Kamera",
+  "mobile.chat.attachment.desktopScreenshot": "Masaüstü ekran görüntüsü",
+  "mobile.chat.desktopScreenshot.request":
+    "capture_screen ile geçerli masaüstü ekranını yakala, ekran görüntüsünü bu sohbette göster ve ekranda ne olduğunu kısa özetle.",
   "mobile.chat.attachment.useSkill": "Beceri veya uygulama kullan",
   "mobile.chat.attachment.addFailed": "Ek eklenemedi",
   "mobile.chat.attachment.limit": "En fazla {limit} dosya ekleyebilirsiniz.",

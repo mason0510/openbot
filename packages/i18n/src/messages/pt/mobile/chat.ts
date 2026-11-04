@@ -125,6 +125,9 @@ export const messages = {
   "mobile.chat.attachment.files": "Arquivos",
   "mobile.chat.attachment.photos": "Fotos",
   "mobile.chat.attachment.camera": "Câmera",
+  "mobile.chat.attachment.desktopScreenshot": "Captura da área de trabalho",
+  "mobile.chat.desktopScreenshot.request":
+    "Capture a tela atual da área de trabalho com capture_screen, mostre a captura neste chat e dê um breve resumo do que aparece na tela.",
   "mobile.chat.attachment.useSkill": "Usar habilidade ou app",
   "mobile.chat.attachment.addFailed": "Não foi possível adicionar o anexo",
   "mobile.chat.attachment.limit": "Você pode anexar até {limit} arquivos.",

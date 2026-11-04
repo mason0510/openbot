@@ -27,6 +27,7 @@ export const messages = {
     "画面の {x}, {y}, {width} × {height} ポイントの領域をキャプチャし、その画像をエージェントのモデルに送信します。",
   "status.agent.screenCaptureProgress": "画面のキャプチャを要求しています…",
   "status.agent.screenCaptureReviewing": "画面のキャプチャを確認しています…",
+  "status.agent.screenCaptureShown": "デスクトップのスクリーンショット · {source} · {width}×{height}",
   "status.agent.browserOpening": "Web ページを開いています…",
   "status.agent.browserReading": "Web ページを読み取っています…",
   "status.agent.browserClicking": "Web ページをクリックしています…",

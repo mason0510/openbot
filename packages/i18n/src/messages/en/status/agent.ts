@@ -28,6 +28,7 @@ export const messages = defineMessages("status.agent", {
   "status.agent.vaultCardFillFrames": "The card fields are in frames from {origins}.",
   "status.agent.screenCaptureProgress": "Asking to capture the screen…",
   "status.agent.screenCaptureReviewing": "Reviewing the screen capture…",
+  "status.agent.screenCaptureShown": "Desktop screenshot · {source} · {width}×{height}",
   "status.agent.browserOpening": "Opening a web page…",
   "status.agent.browserReading": "Reading the web page…",
   "status.agent.browserClicking": "Clicking on the web page…",

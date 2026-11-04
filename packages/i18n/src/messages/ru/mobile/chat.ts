@@ -129,6 +129,9 @@ export const messages = {
   "mobile.chat.attachment.files": "Файлы",
   "mobile.chat.attachment.photos": "Фото",
   "mobile.chat.attachment.camera": "Камера",
+  "mobile.chat.attachment.desktopScreenshot": "Снимок рабочего стола",
+  "mobile.chat.desktopScreenshot.request":
+    "Сделайте снимок текущего рабочего стола с помощью capture_screen, покажите его в этом чате и кратко опишите, что видно на экране.",
   "mobile.chat.attachment.useSkill": "Использовать навык или приложение",
   "mobile.chat.attachment.addFailed": "Не удалось добавить вложение",
   "mobile.chat.attachment.limit": "Можно прикрепить не более {limit} файлов.",

@@ -26,6 +26,7 @@ export const messages = {
   "status.agent.vaultCardFillFrames": "银行卡字段位于来自 {origins} 的框架中。",
   "status.agent.screenCaptureProgress": "正在请求截屏…",
   "status.agent.screenCaptureReviewing": "正在查看截屏…",
+  "status.agent.screenCaptureShown": "电脑截屏 · {source} · {width}×{height}",
   "status.agent.browserOpening": "正在打开网页…",
   "status.agent.browserReading": "正在读取网页…",
   "status.agent.browserClicking": "正在点击网页…",

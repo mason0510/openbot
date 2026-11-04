@@ -121,6 +121,9 @@ export const messages = {
   "mobile.chat.attachment.files": "文件",
   "mobile.chat.attachment.photos": "照片",
   "mobile.chat.attachment.camera": "相机",
+  "mobile.chat.attachment.desktopScreenshot": "电脑截屏",
+  "mobile.chat.desktopScreenshot.request":
+    "请用 capture_screen 截取当前电脑屏幕，把截图发到本对话，并用一两句话概括屏幕上的内容。",
   "mobile.chat.attachment.useSkill": "使用技能或应用",
   "mobile.chat.attachment.addFailed": "无法添加附件",
   "mobile.chat.attachment.limit": "最多可附加 {limit} 个文件。",

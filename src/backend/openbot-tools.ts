@@ -356,7 +356,7 @@ export const OPENBOT_TOOL_DEFINITIONS: readonly OpenBotToolDefinition[] = [
   {
     name: "capture_screen",
     description:
-      "Capture one display, one window, or a region of one display of this computer, and get the image. The user approves each capture first, and sees the image in this conversation. In a channel, each member who reads the channel sees it. Call list_capture_sources first to get ids and bounds. A region uses desktop points.",
+      "Capture one display, one window, or a region of one display of this computer, and get the image. The user approves each capture first, and sees the image in this conversation with a short caption. In a channel, each member who reads the channel sees it. After a capture the user asked for, add a brief summary of what the image shows in your reply. Call list_capture_sources first to get ids and bounds. A region uses desktop points.",
     shape: captureScreenToolShape,
   },
   {

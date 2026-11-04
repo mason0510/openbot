@@ -31,6 +31,7 @@ export const messages = {
   "status.agent.vaultCardFillFrames": "De kaartvelden staan in frames van {origins}.",
   "status.agent.screenCaptureProgress": "Vraagt om het scherm vast te leggen…",
   "status.agent.screenCaptureReviewing": "Bekijkt de schermopname…",
+  "status.agent.screenCaptureShown": "Bureaublad-screenshot · {source} · {width}×{height}",
   "status.agent.browserOpening": "Opent een webpagina…",
   "status.agent.browserReading": "Leest de webpagina…",
   "status.agent.browserClicking": "Klikt op de webpagina…",

@@ -130,6 +130,9 @@ export const messages = {
   "mobile.chat.attachment.files": "Pliki",
   "mobile.chat.attachment.photos": "Zdjęcia",
   "mobile.chat.attachment.camera": "Aparat",
+  "mobile.chat.attachment.desktopScreenshot": "Zrzut pulpitu",
+  "mobile.chat.desktopScreenshot.request":
+    "Zrób zrzut bieżącego pulpitu za pomocą capture_screen, pokaż go w tym czacie i krótko podsumuj, co widać na ekranie.",
   "mobile.chat.attachment.useSkill": "Użyj umiejętności lub aplikacji",
   "mobile.chat.attachment.addFailed": "Nie udało się dodać załącznika",
   "mobile.chat.attachment.limit": "Maksymalna liczba załączonych plików: {limit}.",

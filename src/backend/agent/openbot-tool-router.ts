@@ -1417,7 +1417,12 @@ export class OpenBotToolRouter {
         name: `Screen capture ${new Date().toISOString().replace(/[:.]/gu, "-")}.png`,
         mimeType: "image/png",
       },
-      text: "",
+      // Short caption in the chat bubble (Grok-style embed), not only a bare image.
+      text: sourceText("status.agent.screenCaptureShown", {
+        source: image.sourceName,
+        width: image.width,
+        height: image.height,
+      }),
       itemType: "agent_attachment",
       eventType: "response.attachments-added",
       detail: () => ({ turnId: params.turnId, messageId, attachmentCount: 1 }),

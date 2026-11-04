@@ -26,6 +26,7 @@ export const messages = {
     "Przechwyć obszar ekranu w punkcie {x}, {y} o rozmiarze {width} × {height} punktów i wyślij obraz do modelu agenta.",
   "status.agent.screenCaptureProgress": "Prośba o przechwycenie ekranu…",
   "status.agent.screenCaptureReviewing": "Sprawdzanie przechwyconego ekranu…",
+  "status.agent.screenCaptureShown": "Zrzut pulpitu · {source} · {width}×{height}",
   "status.agent.browserOpening": "Otwieranie strony internetowej…",
   "status.agent.browserReading": "Czytanie strony internetowej…",
   "status.agent.browserClicking": "Klikanie na stronie internetowej…",

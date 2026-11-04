@@ -3,6 +3,7 @@ import { Typography } from "heroui-native";
 import type { LucideIcon } from "lucide-react-native";
 import Camera from "lucide-react-native/icons/camera";
 import Images from "lucide-react-native/icons/images";
+import Monitor from "lucide-react-native/icons/monitor";
 import Paperclip from "lucide-react-native/icons/paperclip";
 import Sparkles from "lucide-react-native/icons/sparkles";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -43,7 +44,7 @@ const ROW_PADDING = 16;
 const ROW_ICON = 21;
 const ROW_GAP = 14;
 const ROW_CHROME = ROW_PADDING * 2 + ROW_ICON + ROW_GAP;
-/** The list's height before it is measured: Files, Photos and Camera, and Use skill when the chat has skills. */
+/** The list's height before it is measured: Desktop screenshot, Files, Photos and Camera, and Use skill when offered. */
 const optionsHeight = (rows: number) => OPTION_ROW * rows + OPTIONS_PADDING * 2;
 const SURFACE_RADIUS = 28;
 // One shape change, no overshoot: there is no finger on the card, and a card
@@ -142,6 +143,7 @@ export function ChatAttachmentPanel({
   liquidGlassAvailable,
   onClose,
   onUseSkill,
+  onDesktopScreenshot,
   progress,
 }: {
   /**
@@ -161,6 +163,8 @@ export function ChatAttachmentPanel({
   onClose: () => void;
   /** Present when the chat's agent has skills: the row writes `@` in the field and offers them. */
   onUseSkill?: () => void;
+  /** Sends a host capture request into this chat, so the desktop screenshot lands as a bubble. */
+  onDesktopScreenshot?: () => void;
   /**
    * 0 with the card gone, 1 with it open. Shared with the composer, so the
    * plus comes back on the same frame the card stops covering it.
@@ -200,16 +204,18 @@ export function ChatAttachmentPanel({
   );
   const labels = {
     useSkill: t("mobile.chat.attachment.useSkill"),
+    desktopScreenshot: t("mobile.chat.attachment.desktopScreenshot"),
     files: t("mobile.chat.attachment.files"),
     photos: t("mobile.chat.attachment.photos"),
     camera: t("mobile.chat.attachment.camera"),
   };
+  const optionRows = (onUseSkill ? 1 : 0) + (onDesktopScreenshot ? 1 : 0) + 3;
   // The list's width comes from its longest label, measured once off the card.
   // The list must have a width of its own: inside the card it would be laid
   // out against the card's animated width on every frame. The card starts to
   // grow once the list's height is known, so it grows in one motion.
   const [listWidth, setListWidth] = useState<number | null>(null);
-  const listHeight = useSharedValue(optionsHeight(onUseSkill ? 4 : 3));
+  const listHeight = useSharedValue(optionsHeight(optionRows));
   const openedRef = useRef(false);
 
   // Runs once the card has finished leaving, so the heavy part of holding a
@@ -316,9 +322,12 @@ export function ChatAttachmentPanel({
               setListWidth(Math.min(maxListWidth, Math.max(OPTIONS_MIN_WIDTH, width)));
             }}
           >
-            {(onUseSkill ? [labels.useSkill] : []).concat(labels.files, labels.photos, labels.camera).map((label) => (
-              <Typography.Paragraph key={label}>{label}</Typography.Paragraph>
-            ))}
+            {(onUseSkill ? [labels.useSkill] : [])
+              .concat(onDesktopScreenshot ? [labels.desktopScreenshot] : [])
+              .concat(labels.files, labels.photos, labels.camera)
+              .map((label) => (
+                <Typography.Paragraph key={label}>{label}</Typography.Paragraph>
+              ))}
           </View>
         </View>
       ) : null}
@@ -381,13 +390,24 @@ export function ChatAttachmentPanel({
           >
             {onUseSkill ? (
               <AttachmentOption
-                index={3}
+                index={optionRows - 1}
                 icon={Sparkles}
                 label={labels.useSkill}
                 foreground={foreground}
                 progress={progress}
                 disabled={false}
                 onPress={() => choose(onUseSkill)}
+              />
+            ) : null}
+            {onDesktopScreenshot ? (
+              <AttachmentOption
+                index={(onUseSkill ? 1 : 0) + 2}
+                icon={Monitor}
+                label={labels.desktopScreenshot}
+                foreground={foreground}
+                progress={progress}
+                disabled={attachments.preparing}
+                onPress={() => choose(onDesktopScreenshot)}
               />
             ) : null}
             <AttachmentOption

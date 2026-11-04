@@ -27,6 +27,7 @@ export const messages = {
     "Den Bildschirmbereich bei {x}, {y}, {width} × {height} Punkten aufnehmen und das Bild an das Modell des Agenten senden.",
   "status.agent.screenCaptureProgress": "Bildschirmaufnahme wird angefragt…",
   "status.agent.screenCaptureReviewing": "Bildschirmaufnahme wird geprüft…",
+  "status.agent.screenCaptureShown": "Desktop-Screenshot · {source} · {width}×{height}",
   "status.agent.browserOpening": "Webseite wird geöffnet…",
   "status.agent.browserReading": "Webseite wird gelesen…",
   "status.agent.browserClicking": "Klick auf der Webseite…",

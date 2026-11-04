@@ -124,6 +124,9 @@ export const messages = {
   "mobile.chat.attachment.files": "파일",
   "mobile.chat.attachment.photos": "사진",
   "mobile.chat.attachment.camera": "카메라",
+  "mobile.chat.attachment.desktopScreenshot": "데스크톱 화면",
+  "mobile.chat.desktopScreenshot.request":
+    "capture_screen으로 현재 데스크톱 화면을 캡처해 이 채팅에 보여 주고, 화면에 보이는 내용을 짧게 요약해 주세요.",
   "mobile.chat.attachment.useSkill": "스킬 또는 앱 사용",
   "mobile.chat.attachment.addFailed": "첨부 파일을 추가할 수 없어요",
   "mobile.chat.attachment.limit": "파일은 최대 {limit}개까지 첨부할 수 있어요.",

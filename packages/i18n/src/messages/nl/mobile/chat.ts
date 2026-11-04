@@ -118,6 +118,9 @@ export const messages = {
   "mobile.chat.attachment.files": "Bestanden",
   "mobile.chat.attachment.photos": "Foto’s",
   "mobile.chat.attachment.camera": "Camera",
+  "mobile.chat.attachment.desktopScreenshot": "Bureaublad-screenshot",
+  "mobile.chat.desktopScreenshot.request":
+    "Maak met capture_screen een screenshot van het huidige bureaublad, toon die in deze chat en geef een korte samenvatting van wat er te zien is.",
   "mobile.chat.attachment.useSkill": "Gebruik vaardigheid of app",
   "mobile.chat.attachment.addFailed": "Kan bijlage niet toevoegen",
   "mobile.chat.attachment.limit": "Je kunt maximaal {limit} bestanden bijvoegen.",

@@ -26,6 +26,7 @@ export const messages = {
     "{x}, {y} konumundaki {width} × {height} noktalık ekran alanını yakala ve görüntüyü ajanın modeline gönder.",
   "status.agent.screenCaptureProgress": "Ekranı yakalamak için izin isteniyor…",
   "status.agent.screenCaptureReviewing": "Ekran görüntüsü inceleniyor…",
+  "status.agent.screenCaptureShown": "Masaüstü ekran görüntüsü · {source} · {width}×{height}",
   "status.agent.browserOpening": "Web sayfası açılıyor…",
   "status.agent.browserReading": "Web sayfası okunuyor…",
   "status.agent.browserClicking": "Web sayfasında tıklanıyor…",

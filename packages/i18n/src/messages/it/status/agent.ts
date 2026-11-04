@@ -29,6 +29,7 @@ export const messages = {
     "Acquisizione dell'area dello schermo a {x}, {y}, {width} × {height} punti e invio dell'immagine al modello dell'agente.",
   "status.agent.screenCaptureProgress": "Richiesta di acquisizione dello schermo…",
   "status.agent.screenCaptureReviewing": "Analisi dell'acquisizione dello schermo…",
+  "status.agent.screenCaptureShown": "Screenshot del desktop · {source} · {width}×{height}",
   "status.agent.browserOpening": "Apertura di una pagina web…",
   "status.agent.browserReading": "Lettura della pagina web…",
   "status.agent.browserClicking": "Clic sulla pagina web…",
