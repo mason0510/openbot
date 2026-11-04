@@ -35,7 +35,7 @@ else
 fi
 gradle_user="${GRADLE_USER_HOME:-/Volumes/codeMason/gradle-user}"
 work_tmp="${TMPDIR:-/Volumes/codeMason/tmp}"
-api_url="${EXPO_PUBLIC_OPENBOT_API_URL:-https://api.attendant.mwcpool.uk}"
+api_url="${EXPO_PUBLIC_OPENBOT_API_URL:-https://api-attendant.mwcpool.uk}"
 apk="$android/app/build/outputs/apk/debug/app-debug.apk"
 adb="$sdk/platform-tools/adb"
 ninja="$sdk/cmake/3.22.1/bin/ninja"

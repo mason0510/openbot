@@ -748,10 +748,11 @@ function decodeStoredMobileCredential(value: unknown): MobileCredential {
 }
 
 /**
- * Moves a stored account origin off the two-label host.
+ * Moves a stored account origin onto the live Attendant account host.
  *
- * Guarantees: `https://api.attendant.mwcpool.uk` becomes `https://api-attendant.mwcpool.uk`.
- * Other origins stay unchanged. It does not check that the new host answers.
+ * Guarantees: `https://api.attendant.mwcpool.uk` and `https://attendant.openbot.run`
+ * become `https://api-attendant.mwcpool.uk`. Other origins stay unchanged.
+ * It does not check that the new host answers.
  */
 function migrateAttendantAccountOrigin(value: string): string {
   let url: URL;
@@ -760,8 +761,10 @@ function migrateAttendantAccountOrigin(value: string): string {
   } catch {
     return value;
   }
-  // The two-label name has no edge certificate. The one-label name is the live account service.
-  if (url.protocol !== "https:" || url.hostname !== "api.attendant.mwcpool.uk") return value;
+  // Broken or legacy public hosts: two-label mwcpool (no cert) and openbot.run
+  // (cert is CN=api.infeld.ai). The one-label mwcpool name is the live account service.
+  const legacyHosts = new Set(["api.attendant.mwcpool.uk", "attendant.openbot.run"]);
+  if (url.protocol !== "https:" || !legacyHosts.has(url.hostname)) return value;
   url.hostname = "api-attendant.mwcpool.uk";
   return url.toString().replace(/\/$/, "");
 }
