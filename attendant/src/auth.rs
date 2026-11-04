@@ -225,6 +225,15 @@ fn json_escape(text: &str) -> String {
  * Refusals: none. An unrecognized value is returned as stored.
  * Boundaries: does not check the signature.
  */
+/**
+ * stored_public_key: Turns a PEM into one TSV field.
+ * Guarantees newlines and carriage returns become the letter n, which `device_public_key_pem` restores.
+ * Does not check that the key is a real SPKI. An empty string stays empty.
+ */
+fn stored_public_key(value: &str) -> String {
+    value.replace("\r\n", "n").replace(['\n', '\r'], "n")
+}
+
 fn device_public_key_pem(stored: &str) -> String {
     if stored.contains('\n') {
         return stored.to_string();
@@ -308,6 +317,8 @@ pub fn issue_mobile_ticket(
  * Guarantee: Returns authEpoch >= 1 and a machine token. The same email and host id updates in place.
  * Refusal: 401 if no valid session, 400 if hostId or name is invalid, 409 if another email owns the host id.
  * Boundary: One hostId belongs to exactly one email. A session row is not changed.
+ * A PEM key may contain newlines. Those cannot sit in a TSV field, so they are stored as the letter n
+ * and restored by `device_public_key_pem`.
  */
 pub fn register_remote_host(
     store: &mut Store,
@@ -323,8 +334,18 @@ pub fn register_remote_host(
     let Some(email) = session_email(store, token, now) else {
         return api_error(401, "unauthorized", "A desktop session is required.");
     };
-    if !valid_host_id(host_id) || !valid_host_name(name) || !tsv_safe(device_public_key) {
-        return api_error(400, "invalid_remote_host", "The remote host is invalid.");
+    let device_public_key = stored_public_key(device_public_key);
+    if !valid_host_id(host_id) {
+        eprintln!("register reject host_id len={}", host_id.len());
+        return api_error(400, "invalid_host_id", "The remote host id is invalid.");
+    }
+    if !valid_host_name(name) {
+        eprintln!("register reject name len={}", name.len());
+        return api_error(400, "invalid_host_name", "The remote host name is invalid.");
+    }
+    if !tsv_safe(&device_public_key) {
+        eprintln!("register reject key len={}", device_public_key.len());
+        return api_error(400, "invalid_host_key", "The remote host key is invalid.");
     }
     let membership_id = if valid_membership_id(membership_id) {
         membership_id.to_string()

@@ -68,19 +68,25 @@ const SIGNAL_ERROR_TEXT = new Map<string, string>([
 /** How long the peer waits after Signal limits its rate. */
 const SIGNAL_RATE_LIMIT_MS = 60_000;
 /**
- * This Mac's secured IPv6, UDP 3478. The phone WebRTC socket is IPv6, and a STUN
- * name with only an A record is dropped there (`incompatible` / net error -105),
- * so gathering never produces an address the desktop can dial.
- * Guarantees a non-empty `ready` list is replaced by this one literal.
- * Does not guarantee the address still answers after the prefix changes, and does
- * not add TURN. An empty list stays empty so `relayUnavailable` still fires.
+ * Drops one ICE server URL this socket cannot use.
+ * Guarantees the failed URL is absent. Does not add a URL and does not invent an address.
+ * An empty result means host candidates only; the peer's advertised address is the path.
  */
-const LAN_IPV6_STUN_URL = "stun:[2409:8a1e:9882:40f0:401:6539:6acb:467f]:3478";
-function withLanIpv6Stun(servers: RTCIceServer[]): RTCIceServer[] {
-  if (servers.length === 0) return servers;
-  // The IPv6 socket logs a lookup error for the hostname and does not send to this
-  // literal while that name is still in the list. Keep only the address it can dial.
-  return [{ urls: LAN_IPV6_STUN_URL }];
+/** Counts families only. The address stays out of the diagnostic. */
+function iceFamilyCount(servers: RTCIceServer[]): string {
+  const urls = servers.flatMap((server) => (typeof server.urls === "string" ? [server.urls] : [...server.urls]));
+  const v6 = urls.some((url) => url.includes("[")) ? 1 : 0;
+  const v4 = urls.some((url) => !url.includes("[")) ? 1 : 0;
+  return `v4=${v4} v6=${v6}`;
+}
+
+function withoutIceServerUrl(servers: RTCIceServer[], failedUrl: string): RTCIceServer[] {
+  return servers.flatMap((server) => {
+    const urls = typeof server.urls === "string" ? [server.urls] : [...server.urls];
+    const kept = urls.filter((url) => url !== failedUrl);
+    if (kept.length === 0) return [];
+    return [{ ...server, urls: kept.length === 1 ? kept[0] : kept }];
+  });
 }
 const peerCall = <A>(operation: () => Promise<A> | A) =>
   Effect.tryPromise({ try: async () => operation(), catch: peerError });
@@ -1183,6 +1189,18 @@ export function createRemoteTeamPeer(
         );
         return;
       }
+      if (message.type === "ice-servers") {
+        state.iceServers = message.iceServers;
+        if (state.connection) {
+          const connection = state.connection;
+          yield* peerDecode(() =>
+            connection.setConfiguration({ iceServers: state.iceServers, bundlePolicy: "max-bundle" }),
+          );
+          yield* restartIce(state);
+        }
+        yield* notify(diagnosticCall(state, "ice-servers", iceFamilyCount(state.iceServers)));
+        return;
+      }
       if (message.type === "ready") {
         state.reconnectAttempt = 0;
         state.failedOpens = 0;
@@ -1211,7 +1229,7 @@ export function createRemoteTeamPeer(
         // Null on the `ready` that answers a TURN refresh: the credentials are new, the connection is
         // the one already open.
         state.connectionId = message.connectionId ?? state.connectionId;
-        state.iceServers = withLanIpv6Stun(message.iceServers);
+        state.iceServers = message.iceServers;
         if (!state.connectionId)
           return yield* new RemotePeerError({ message: "Signal returned an incomplete connection." });
         if (state.iceServers.length === 0)
@@ -1285,6 +1303,19 @@ export function createRemoteTeamPeer(
   function createPeerConnection(state: PeerState, iceServers: RTCIceServer[], actions: ActionsRef): RTCPeerConnection {
     const connection = new RTCPeerConnection({ iceServers, bundlePolicy: "max-bundle" });
     state.connection = connection;
+    connection.onicecandidateerror = (event) => {
+      // 701 is Chromium's code for a STUN address this socket's family cannot use.
+      const failedUrl = event.url;
+      if (!failedUrl || state.connection !== connection) return;
+      const unusable = event.errorCode === 701 || /incompatible|lookup/i.test(event.errorText);
+      if (!unusable) return;
+      const next = withoutIceServerUrl(state.iceServers, failedUrl);
+      if (next.length === state.iceServers.length) return;
+      state.iceServers = next;
+      void connection.setConfiguration({ iceServers: next, bundlePolicy: "max-bundle" }).then(() => {
+        if (state.connection === connection && connection.signalingState !== "closed") connection.restartIce();
+      });
+    };
     connection.onicecandidate = (event) => {
       // An empty candidate marks the end of gathering. Signal v1 accepts only candidates.
       if (!event.candidate?.candidate || !state.connectionId || !canSignal(state)) return;

@@ -29,6 +29,8 @@ export interface BridgeCommand {
   iceTransportPolicy?: "all" | "relay";
   /** For a host: devices connect only over a private network, with no STUN or TURN. */
   privateNetwork?: boolean;
+  /** Host only. Main read these from OS interfaces. Empty means the service clears the pair. */
+  hostAddresses?: string[];
   channel?: "rpc" | "events" | "files" | "desktop";
   data?: string | ArrayBuffer;
 }
@@ -101,6 +103,8 @@ const SIGNAL_RENEW_DELAY_MS = 8_000;
 const DISCONNECT_GRACE_MS = 15_000;
 
 const peers = new Map<string, PeerState>();
+/** Latest host interface list from the connect command. Not read from WebRTC. */
+let hostLanAddresses: string[] = [];
 // Main can replace a peer after an initial connection error. Keep the rate wait across that replacement.
 let signalRetryAt = 0;
 
@@ -187,6 +191,11 @@ async function handleCommand(command: BridgeCommand): Promise<void> {
         signalChain: Promise.resolve(),
         closed: false,
       };
+      if (command.peer === "host") {
+        hostLanAddresses = Array.isArray(command.hostAddresses)
+          ? command.hostAddresses.filter((item): item is string => typeof item === "string")
+          : [];
+      }
       peers.set(state.id, state);
       connectSignal(state, prepared);
     } else if (command.type === "prepare-signal") {
@@ -288,6 +297,21 @@ function takePreparedSignal(peerId: string, signalUrl: string): WebSocket | null
   return null;
 }
 
+/**
+ * Sends the interface list main passed on connect.
+ * Guarantees one `address-update` when the socket is open. Does not wait for an ICE candidate.
+ * Does not invent an address. An empty list is sent when main passed none, so the service can clear a stale pair.
+ */
+function publishHostAddresses(socket: WebSocket): void {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  const frame: SignalClientMessage = {
+    type: "address-update",
+    version: SIGNAL_PROTOCOL_VERSION,
+    addresses: hostLanAddresses,
+  };
+  socket.send(JSON.stringify(frame));
+}
+
 function dropPreparedSignal(peerId: string): void {
   takePreparedSignal(peerId, "")?.close(1000, "Peer stopped");
 }
@@ -313,6 +337,7 @@ function connectSignal(state: PeerState, prepared: WebSocket | null = null): voi
       ...(state.role === "host" ? { multiplex: true } : {}),
     };
     socket.send(JSON.stringify(hello));
+    if (state.role === "host") publishHostAddresses(socket);
   };
   // A prepared socket can be open already. It told main when it opened.
   const open = prepared?.readyState === WebSocket.OPEN;

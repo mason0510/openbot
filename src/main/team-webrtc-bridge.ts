@@ -8,6 +8,7 @@ import { Deferred, Effect, Exit, Fiber, Scope } from "effect";
 import { BrowserWindow, MessageChannelMain, type MessagePortMain } from "electron";
 import { z } from "zod";
 import { RemoteWorkflowError, remoteCall, remoteDecode } from "./remote-service-effects";
+import { hostInterfaceAddresses } from "./private-network-detection";
 import { ensureChromiumProxy } from "./system-http-proxy";
 
 export type TeamWebRtcChannel = "rpc" | "events" | "files" | "desktop";
@@ -104,6 +105,8 @@ type BridgeCommand =
       peer: "host" | "client";
       iceTransportPolicy: "all" | "relay";
       privateNetwork?: boolean;
+      /** Host only. Read from OS interfaces at connect time. Never a compiled house address. */
+      hostAddresses?: string[];
     }
   | { type: "prepare-signal"; peerId: string; signalUrl: string }
   | { type: "set-private-network"; peerId: string; privateNetwork: boolean }
@@ -147,7 +150,12 @@ export class TeamWebRtcBridge extends EventEmitter<TeamWebRtcBridgeEvents> {
     input: { peerId: string; signalUrl: string; token: string; peer: "host" | "client"; privateNetwork?: boolean },
   ) {
     yield* this.start();
-    yield* this.#command({ type: "connect", ...input, iceTransportPolicy: this.#options.iceTransportPolicy ?? "all" });
+    yield* this.#command({
+      type: "connect",
+      ...input,
+      hostAddresses: input.peer === "host" ? hostInterfaceAddresses() : [],
+      iceTransportPolicy: this.#options.iceTransportPolicy ?? "all",
+    });
   }).bind(this);
 
   /**

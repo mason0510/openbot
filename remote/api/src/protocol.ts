@@ -192,6 +192,11 @@ const signalClientMessageSchema = z.discriminatedUnion("type", [
     connectionId: identifierSchema.nullable(),
   }),
   z.object({
+    type: z.literal("address-update"),
+    version: z.literal(1),
+    addresses: z.array(z.string().min(1).max(64)).max(8),
+  }),
+  z.object({
     type: z.literal("disconnect"),
     version: z.literal(1),
     connectionId: identifierSchema,

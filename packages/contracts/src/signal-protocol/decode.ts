@@ -57,6 +57,13 @@ export function decodeSignalServerMessage(value: unknown): SignalServerMessage |
         iceServers: iceServers(value.iceServers),
         ...(value.capabilities === undefined ? {} : { capabilities: capabilities(value.capabilities) }),
       };
+    case "ice-servers":
+      return {
+        type: kind,
+        version,
+        connectionId: value.connectionId === null ? null : identifier(value.connectionId),
+        iceServers: iceServers(value.iceServers),
+      };
     case "host-waiting":
       return { type: kind, version, resumeToken: identifier(value.resumeToken) };
     case "peer-ready":

@@ -127,7 +127,10 @@ export type SignalRelayMessage =
   | { type: "ice-restart"; version: SignalProtocolVersion; connectionId: string; channel: SignalChannel }
   // A null `connectionId` asks for the socket's own credentials rather than one connection's.
   | { type: "turn-refresh"; version: SignalProtocolVersion; connectionId: string | null }
-  | { type: "disconnect"; version: SignalProtocolVersion; connectionId: string };
+  | { type: "disconnect"; version: SignalProtocolVersion; connectionId: string }
+  // `host` only. Current non-link-local addresses. An older Signal ignores it.
+  // The service answers the clients with `ice-servers`, so a later address is not stuck in the first `ready`.
+  | { type: "address-update"; version: SignalProtocolVersion; addresses: string[] };
 
 export type SignalClientMessage =
   | {
@@ -218,6 +221,14 @@ export type SignalServerMessage =
       // `ingress` only, and optional: what this Signal can do beyond Slack, such as `telegram`. An
       // older Signal sends none.
       capabilities?: string[];
+    }
+  // Follows `ready` when the host publishes a later address. `connectionId` is null: every
+  // connection on this socket uses the new list. An older client ignores the type.
+  | {
+      type: "ice-servers";
+      version: SignalProtocolVersion;
+      connectionId: string | null;
+      iceServers: IceServer[];
     }
   // Answers a client hello with `waitForHost` while its host is offline. The socket stays open, and
   // Signal sends `ready` on it when the host connects. `resumeToken` lets the client renew the socket
