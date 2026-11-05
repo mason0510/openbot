@@ -604,7 +604,7 @@ export function createMockOpenBot(options: MockOpenBotOptions = {}): MockOpenBot
   const models = clone(options.models ?? STORY_MODELS);
   const snapshots = clone(options.snapshots ?? STORY_SNAPSHOTS);
   let updateStatus = clone(options.updateStatus ?? STORY_UPDATE_STATUS);
-  let updatePreference: UpdatePreference = { autoDownload: true, allowRemoteUpdates: true, autoInstall: false };
+  let updatePreference: UpdatePreference = { autoDownload: true, allowRemoteUpdates: true, autoInstall: false, notifyUpdates: false };
   const usage = clone(options.usage ?? STORY_USAGE);
   /** The usage resets left on each provider account after the preview spent one. */
   const usageResets = new Map<string, number>();

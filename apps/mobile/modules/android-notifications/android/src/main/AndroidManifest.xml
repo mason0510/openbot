@@ -6,7 +6,7 @@
       to it.
     -->
     <service
-      android:name="run.openbot.mobile.notifications.OpenBotMessagingService"
+      android:name="app.slavebot.mobile.notifications.OpenBotMessagingService"
       android:exported="false">
       <intent-filter>
         <action android:name="com.google.firebase.MESSAGING_EVENT" />

@@ -5,7 +5,7 @@ import type { NotificationPermission } from "@/features/settings/model/push-noti
 import { type PushNotificationsNative, SOUND_PREVIEW_KEY } from "./push-notifications-native.types";
 
 /** The App Group of the app and its extensions. `app.json` names the same group. */
-const APP_GROUP = "group.run.openbot.mobile";
+const APP_GROUP = "group.app.slavebot.mobile";
 /** `NotificationService.swift` reads this file. */
 const KEYS_FILE = "push-notifications.json";
 

@@ -1,4 +1,4 @@
-package run.openbot.mobile.notifications
+package app.slavebot.mobile.notifications
 
 import android.net.Uri
 import com.google.firebase.messaging.RemoteMessage

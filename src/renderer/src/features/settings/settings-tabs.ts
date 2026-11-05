@@ -179,6 +179,7 @@ export const navItems: ReadonlyArray<SettingsNavItem> = [
       { titleKey: "settings.updates.idleRestart.title" },
       { titleKey: "settings.updates.autoDownload.title", descriptionKey: "settings.updates.autoDownload.description" },
       { titleKey: "settings.updates.autoInstall.title", descriptionKey: "settings.updates.autoInstall.description" },
+      { titleKey: "settings.updates.notifyUpdates.title", descriptionKey: "settings.updates.notifyUpdates.description" },
       { titleKey: "settings.updates.allowRemote.title", descriptionKey: "settings.updates.allowRemote.description" },
       { titleKey: "settings.updates.managed.title", descriptionKey: "settings.updates.managed.description" },
     ],

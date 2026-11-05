@@ -419,6 +419,9 @@ export const messages = defineMessages("settings", {
   "settings.updates.autoInstall.title": "Install updates automatically",
   "settings.updates.autoInstall.description":
     "OpenBot restarts into a downloaded update when the agents are idle. Members of your servers are disconnected for a short time.",
+  "settings.updates.notifyUpdates.title": "Update notifications",
+  "settings.updates.notifyUpdates.description":
+    "Show a notice when a slavebot or provider CLI update becomes available.",
   // Restart OpenBot, or install a downloaded update, when no agent works.
   "settings.updates.idleRestart.title": "Restart OpenBot",
   "settings.updates.idleRestart.relaunchDescription":

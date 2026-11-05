@@ -102,6 +102,8 @@ export interface UpdatePreference {
   allowRemoteUpdates: boolean;
   /** Restart into a downloaded update when no work runs, without a request. */
   autoInstall: boolean;
+  /** Show in-app notices when an app or provider CLI update becomes available. Default off. */
+  notifyUpdates: boolean;
 }
 
 /** The fields to change. An absent field keeps its stored value. */

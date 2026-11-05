@@ -28,6 +28,7 @@ import { mobileAnalytics } from "@/features/analytics/mobile-analytics";
 import { type MobileSession, redeemMobileConnectUrl } from "@/features/auth/api/mobile-auth";
 import type { EmailCodeInputHandle } from "@/features/auth/components/email-code-input";
 import { QrScanner, type ScannerMode, type ScanStatus } from "@/features/auth/components/qr-scanner";
+import { SHOW_QR_LOGIN } from "@/features/auth/model/feature-flags";
 import {
   PANE_ENTER_DELAY_MS,
   PANE_SIDE_ENTER_DELAY_MS,
@@ -425,7 +426,7 @@ export function SignInScreen({ notice }: { notice?: SignInNotice }) {
               helpOpen={helpOpen}
               helpShift={helpShift}
               onToggleHelp={() => setHelpOpen((open) => !open)}
-              onScan={openScanner}
+              onScan={SHOW_QR_LOGIN ? openScanner : () => undefined}
               onEmail={signIn.openEmail}
               reduced={reduced}
             />
@@ -438,7 +439,7 @@ export function SignInScreen({ notice }: { notice?: SignInNotice }) {
                 signIn={signIn}
                 motion={motion}
                 emailInput={emailInput}
-                onScanInstead={openScanner}
+                onScanInstead={SHOW_QR_LOGIN ? openScanner : () => undefined}
                 onLayout={setFormHeight}
                 reduced={reduced}
               />

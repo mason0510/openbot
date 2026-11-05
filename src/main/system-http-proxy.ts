@@ -7,14 +7,15 @@
  *
  * Algorithm ApplySystemHttpProxy: before `app.whenReady()`, read the OS proxy and, when one
  * exists, set Chromium `--proxy-server`. After ready, set the same hop on the default session.
- * Prefer an HTTP hop over SOCKS. The HTTP form is one `http://host:port` rule so `wss` does not
- * stay DIRECT. A machine proxy also disables HTTP/2 so Signal can send a classic upgrade. No hop
- * does not call `setProxy` and does not set either switch. A process
- * `HTTP_PROXY` is not a machine proxy and is ignored. This does not prove the proxy can reach
- * the origin.
+ * Prefer HTTPS, then HTTP, then SOCKS. Skip a hop whose TCP port does not accept a connection,
+ * then try the next distinct host:port. The HTTP form is one `http://host:port` rule so `wss`
+ * does not stay DIRECT. A machine proxy also disables HTTP/2 so Signal can send a classic
+ * upgrade. No hop does not call `setProxy` and does not set either switch. A process
+ * `HTTP_PROXY` is not a machine proxy and is ignored. A listening port does not prove the
+ * proxy can reach the origin.
  */
 
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 import { createOpenBotLogger } from "@openbot/logging";
 import { app, net, type Session, session } from "electron";
@@ -25,6 +26,7 @@ const logger = createOpenBotLogger("system-http-proxy");
 
 const LOOPBACK_BYPASS = "localhost,127.0.0.1,::1,<local>";
 const LOOPBACK_BYPASS_SWITCH = "localhost;127.0.0.1;::1;<local>";
+const PROXY_PROBE_TIMEOUT_MS = 300;
 
 type ProxyHop = { kind: "direct" } | { kind: "http" | "socks"; host: string; port: number };
 
@@ -33,9 +35,10 @@ let fetchPatched = false;
 /**
  * Set Chromium's process proxy switch before `app.whenReady()`.
  *
- * Guarantees: an enabled OS HTTP proxy becomes `--proxy-server=http://host:port` and disables
- * HTTP/2, so Signal can send a classic Upgrade. SOCKS is used only when HTTP and HTTPS are off.
- * No enabled proxy leaves both switches unset. Does not read process environment proxy variables.
+ * Guarantees: an enabled OS HTTP proxy whose port accepts TCP becomes
+ * `--proxy-server=http://host:port` and disables HTTP/2, so Signal can send a classic Upgrade.
+ * A closed port is skipped. SOCKS is used when earlier HTTP hops are off or closed.
+ * No accepting hop leaves both switches unset. Does not read process environment proxy variables.
  */
 export function applyStartupChromiumProxy(): void {
   const hop = readDarwinProxySync();
@@ -148,9 +151,47 @@ function readDarwinProxySync(): Exclude<ProxyHop, { kind: "direct" }> | null {
   }
 }
 
-/** HTTPS, then HTTP, then SOCKS. An absent list is no proxy. */
+/**
+ * HTTPS, then HTTP, then SOCKS. A closed TCP port is skipped. An absent or all-closed list is no
+ * proxy.
+ */
 function preferScutilHop(text: string): Exclude<ProxyHop, { kind: "direct" }> | null {
-  return scutilHop(text, "HTTPS") ?? scutilHop(text, "HTTP") ?? scutilHop(text, "SOCKS");
+  const seen = new Set<string>();
+  for (const hop of [scutilHop(text, "HTTPS"), scutilHop(text, "HTTP"), scutilHop(text, "SOCKS")]) {
+    if (!hop) continue;
+    const key = `${hop.host}:${hop.port}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (tcpPortAcceptsSync(hop.host, hop.port)) return hop;
+    logger.info("Skipped a machine proxy that did not accept a connection.", {
+      kind: hop.kind,
+      host: hop.host,
+      port: hop.port,
+    });
+  }
+  return null;
+}
+
+/**
+ * Whether `host:port` accepts a TCP connect.
+ *
+ * Guarantees: a refused, timed-out, or unreachable port is false. A listening port is true.
+ * Does not prove the process is a working HTTP or SOCKS proxy.
+ */
+function tcpPortAcceptsSync(host: string, port: number): boolean {
+  const script = `"use strict";
+const net = require("net");
+const socket = net.connect(${port}, ${JSON.stringify(host)}, () => process.exit(0));
+socket.on("error", () => process.exit(1));
+setTimeout(() => process.exit(1), ${PROXY_PROBE_TIMEOUT_MS});
+`;
+  const result = spawnSync(process.execPath, ["-e", script], {
+    timeout: PROXY_PROBE_TIMEOUT_MS + 700,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  return result.status === 0;
 }
 
 /** One enabled scutil proxy block, or null when that kind is off. */

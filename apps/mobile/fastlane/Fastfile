@@ -16,7 +16,7 @@ platform :ios do
     upload_to_testflight(
       api_key: api_key,
       ipa: ipa,
-      app_identifier: "run.openbot.mobile",
+      app_identifier: "app.slavebot.mobile",
       skip_waiting_for_build_processing: true,
       distribute_external: false
     )
@@ -34,7 +34,7 @@ platform :android do
     UI.user_error!("PLAY_RELEASE_STATUS must be completed or draft") unless %w[completed draft].include?(release_status)
 
     upload_to_play_store(
-      package_name: "run.openbot.mobile",
+      package_name: "app.slavebot.mobile",
       aab: aab,
       json_key_data: ENV.fetch("GOOGLE_PLAY_SERVICE_ACCOUNT_KEY"),
       track: track,

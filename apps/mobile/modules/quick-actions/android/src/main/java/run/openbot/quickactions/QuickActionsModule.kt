@@ -11,8 +11,8 @@ import expo.modules.kotlin.records.Field
 import expo.modules.kotlin.records.Record
 
 private const val QUICK_ACTION_EVENT = "onQuickAction"
-private const val SHORTCUT_ACTION = "run.openbot.mobile.QUICK_ACTION"
-private const val SHORTCUT_ID = "run.openbot.mobile.QUICK_ACTION_ID"
+private const val SHORTCUT_ACTION = "app.slavebot.mobile.QUICK_ACTION"
+private const val SHORTCUT_ID = "app.slavebot.mobile.QUICK_ACTION_ID"
 
 class QuickActionItem : Record {
   @Field val id: String = ""

@@ -3,7 +3,7 @@ plugins {
   id 'expo-module-gradle-plugin'
 }
 
-group = 'run.openbot.mobile'
+group = 'app.slavebot.mobile'
 version = '1.0.0'
 
 expoModule {
@@ -11,7 +11,7 @@ expoModule {
 }
 
 android {
-  namespace "run.openbot.mobile.notifications"
+  namespace "app.slavebot.mobile.notifications"
   defaultConfig {
     versionCode 1
     versionName '1.0.0'

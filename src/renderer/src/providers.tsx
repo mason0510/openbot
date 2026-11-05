@@ -33,6 +33,7 @@ import { remoteProviderRuntimes } from "./features/provider-updates/remote-provi
 import { remoteAdminServer, serverSupportsCapability } from "./features/servers/server-capabilities";
 import { useServers } from "./features/servers/servers-context";
 import { hostProviderKeyApi, providerKeyApi } from "./features/settings/provider-key-api";
+import { useSettings } from "./features/settings/settings-context";
 import { usePlatform } from "./platform";
 import { providersPort } from "./providers-port";
 import { createSimpleContext } from "./simple-context";
@@ -51,6 +52,7 @@ const Providers = createSimpleContext({
     const { agentStatus, setAgentStatus, refreshHostAccounts, refreshHostAccountUsage } = useAgents();
     const { activeServer } = useServers();
     const { appInfo } = usePlatform();
+    const { generalSettings } = useSettings();
     const [refreshingProviders, setRefreshingProviders] = createSignal(false);
     /**
      * A CLI the user installed themselves, and the version it reports. Only the agent status knows
@@ -76,6 +78,7 @@ const Providers = createSimpleContext({
         systemCliVersion,
         isLocalServer: () => activeServer()?.kind === "local",
         managesRuntimes: () => activeServer()?.kind === "local" || providerAdminServerId() !== undefined,
+        announceUpdates: () => generalSettings().notifyUpdates,
       },
     );
     // A boolean, so that a server-list update that keeps the capability does not rebuild the keys.

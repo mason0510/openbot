@@ -223,6 +223,13 @@ export function SettingsUpdatesTab(props: SettingsUpdatesTabProps) {
                 description={t("settings.updates.autoInstall.description")}
               />
               <SwitchField
+                data-settings-row="settings.updates.notifyUpdates.title"
+                checked={props.value.notifyUpdates}
+                onChange={(checked) => props.onUpdateSetting("notifyUpdates", checked)}
+                label={t("settings.updates.notifyUpdates.title")}
+                description={t("settings.updates.notifyUpdates.description")}
+              />
+              <SwitchField
                 data-settings-row="settings.updates.allowRemote.title"
                 checked={props.value.allowRemoteUpdates}
                 onChange={(checked) => props.onUpdateSetting("allowRemoteUpdates", checked)}

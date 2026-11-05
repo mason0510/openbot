@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:1006722609038:android:e356f83f470297b6373edf",
         "android_client_info": {
-          "package_name": "run.openbot.mobile"
+          "package_name": "app.slavebot.mobile"
         }
       },
       "oauth_client": [],

@@ -25,8 +25,8 @@ export type AppUpdate = { kind: "ready"; id: string } | { kind: "store"; id: str
 // The store pages of the app. The web pages are the fallback when the store app does not open.
 const IOS_STORE_URL = "itms-apps://apps.apple.com/app/id6807024266";
 const IOS_STORE_WEB_URL = "https://apps.apple.com/app/id6807024266";
-const ANDROID_STORE_URL = "market://details?id=run.openbot.mobile";
-const ANDROID_STORE_WEB_URL = "https://play.google.com/store/apps/details?id=run.openbot.mobile";
+const ANDROID_STORE_URL = "market://details?id=app.slavebot.mobile";
+const ANDROID_STORE_WEB_URL = "https://play.google.com/store/apps/details?id=app.slavebot.mobile";
 
 /** The public changelog, for when the notes cannot load. */
 export const MOBILE_CHANGELOG_URL = "https://openbot.run/changelog?platform=mobile";

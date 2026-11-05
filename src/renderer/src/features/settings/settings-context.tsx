@@ -151,6 +151,7 @@ const Settings = createSimpleContext({
     let autoDownloadUpdatesChanged = false;
     let allowRemoteUpdatesChanged = false;
     let autoInstallUpdatesChanged = false;
+    let notifyUpdatesChanged = false;
     let notificationPreferenceChanged = false;
     let busyMessageModeChanged = false;
     let agentDefaultsChanged = false;
@@ -276,6 +277,14 @@ const Settings = createSimpleContext({
           "autoInstallUpdates",
           settingsPort().update.setPreference({ autoInstall: value.autoInstallUpdates }),
           (preference) => preference.autoInstall,
+        );
+      }
+      if (previous.notifyUpdates !== value.notifyUpdates) {
+        notifyUpdatesChanged = true;
+        persistField(
+          "notifyUpdates",
+          settingsPort().update.setPreference({ notifyUpdates: value.notifyUpdates }),
+          (preference) => preference.notifyUpdates,
         );
       }
       if (
@@ -475,10 +484,12 @@ const Settings = createSimpleContext({
       const unsubscribeUpdates = settingsPort().update.onPreference((preference) => {
         autoDownloadUpdatesChanged = true;
         autoInstallUpdatesChanged = true;
+        notifyUpdatesChanged = true;
         setGeneralSettings((current) => ({
           ...current,
           autoDownloadUpdates: preference.autoDownload,
           autoInstallUpdates: preference.autoInstall,
+          notifyUpdates: preference.notifyUpdates,
         }));
       });
       // A page can open from main with no click here, such as a sign-in page, so main sends the notice.
@@ -537,6 +548,7 @@ const Settings = createSimpleContext({
                 ? current.allowRemoteUpdates
                 : preference.allowRemoteUpdates,
               autoInstallUpdates: autoInstallUpdatesChanged ? current.autoInstallUpdates : preference.autoInstall,
+              notifyUpdates: notifyUpdatesChanged ? current.notifyUpdates : preference.notifyUpdates,
             }));
           }),
         settingsPort()

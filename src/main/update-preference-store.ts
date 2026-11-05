@@ -4,10 +4,10 @@ import { Effect, Semaphore } from "effect";
 import { isMissingFileError } from "../backend/file-errors";
 import { readPreferenceFile, writePreferenceFile } from "./preference-file";
 
-const DEFAULT_PREFERENCE: UpdatePreference = { autoDownload: true, allowRemoteUpdates: true, autoInstall: false };
+const DEFAULT_PREFERENCE: UpdatePreference = { autoDownload: true, allowRemoteUpdates: true, autoInstall: false, notifyUpdates: false };
 
-// `allowRemoteUpdates` and `autoInstall` came later in the same version 1 file. A file without them
-// is one written before remote updates existed, and an older app that reads a newer file ignores them.
+// `allowRemoteUpdates`, `autoInstall`, and `notifyUpdates` came later in the same version 1 file. A file without them
+// is one written before those switches existed, and an older app that reads a newer file ignores them.
 export const readUpdatePreference = Effect.fn("readUpdatePreference")((path: string) =>
   readPreferenceFile(path, (parsed): UpdatePreference => {
     if (!isDynamicRecord(parsed) || parsed.version !== 1 || !isBoolean(parsed.autoDownload)) {
@@ -19,6 +19,7 @@ export const readUpdatePreference = Effect.fn("readUpdatePreference")((path: str
         ? parsed.allowRemoteUpdates
         : DEFAULT_PREFERENCE.allowRemoteUpdates,
       autoInstall: isBoolean(parsed.autoInstall) ? parsed.autoInstall : DEFAULT_PREFERENCE.autoInstall,
+      notifyUpdates: isBoolean(parsed.notifyUpdates) ? parsed.notifyUpdates : DEFAULT_PREFERENCE.notifyUpdates,
     };
   }).pipe(
     Effect.catch((failure) => {

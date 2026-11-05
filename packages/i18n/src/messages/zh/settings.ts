@@ -394,6 +394,9 @@ export const messages = {
   "settings.updates.autoInstall.title": "自动安装更新",
   "settings.updates.autoInstall.description":
     "助手空闲时，OpenBot 会重启并应用已下载的更新。你的服务器成员会短暂断开连接。",
+  "settings.updates.notifyUpdates.title": "更新通知",
+  "settings.updates.notifyUpdates.description":
+    "有 slavebot 或服务商 CLI 更新时自动弹出通知。",
   // Restart OpenBot, or install a downloaded update, when no agent works.
   "settings.updates.idleRestart.title": "重启 OpenBot",
   "settings.updates.idleRestart.relaunchDescription": "助手空闲时 OpenBot 会重启。新的自动化任务会等到那时再运行。",

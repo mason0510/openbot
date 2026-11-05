@@ -26,6 +26,7 @@ import {
   SIGN_IN_TEXT_EASE,
   signInMotion,
 } from "@/features/auth/components/sign-in-motion";
+import { SHOW_QR_LOGIN } from "@/features/auth/model/feature-flags";
 import { type EmailSignIn, formatTimer } from "@/features/auth/model/use-email-sign-in";
 import { BLOUB_MOVE_MS } from "@/shared/components/bloub-stage/bloub-look";
 import { haptics } from "@/shared/lib/haptics";
@@ -319,12 +320,21 @@ export function OptionsPane({
         <Typography.Paragraph color="muted">{t("mobile.auth.signIn.subtitle")}</Typography.Paragraph>
       </PaneItem>
       <PaneItem index={2} motion={motion} className="mt-7 gap-3">
-        <SignInButton brand icon={ScanLine} label={t("mobile.auth.scanQrCode")} onPress={onScan} reduced={reduced} />
-        <SignInButton brand={false} label={t("mobile.auth.signIn.emailButton")} onPress={onEmail} reduced={reduced} />
+        {SHOW_QR_LOGIN ? (
+          <SignInButton brand icon={ScanLine} label={t("mobile.auth.scanQrCode")} onPress={onScan} reduced={reduced} />
+        ) : null}
+        <SignInButton
+          brand={!SHOW_QR_LOGIN}
+          label={t("mobile.auth.signIn.emailButton")}
+          onPress={onEmail}
+          reduced={reduced}
+        />
       </PaneItem>
-      <PaneItem index={3} motion={motion}>
-        <HelpToggle open={helpOpen} onToggle={onToggleHelp} onBodyLayout={onHelpLayout} reduced={reduced} />
-      </PaneItem>
+      {SHOW_QR_LOGIN ? (
+        <PaneItem index={3} motion={motion}>
+          <HelpToggle open={helpOpen} onToggle={onToggleHelp} onBodyLayout={onHelpLayout} reduced={reduced} />
+        </PaneItem>
+      ) : null}
     </Animated.View>
   );
 }
@@ -398,14 +408,16 @@ export function EmailPane({
           reduced={reduced}
         />
       </PaneItem>
-      <PaneItem index={4} motion={motion} className="mt-1.5 flex-row">
-        <TextAction
-          label={t("mobile.auth.email.useQrCode")}
-          onPress={onScanInstead}
-          disabled={sending}
-          reduced={reduced}
-        />
-      </PaneItem>
+      {SHOW_QR_LOGIN ? (
+        <PaneItem index={4} motion={motion} className="mt-1.5 flex-row">
+          <TextAction
+            label={t("mobile.auth.email.useQrCode")}
+            onPress={onScanInstead}
+            disabled={sending}
+            reduced={reduced}
+          />
+        </PaneItem>
+      ) : null}
     </View>
   );
 }

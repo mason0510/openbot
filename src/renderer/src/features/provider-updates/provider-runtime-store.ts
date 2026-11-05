@@ -77,6 +77,11 @@ export interface ProviderCliOwners {
    * change a runtime the user is not looking at, unless `api` reaches that server's host.
    */
   managesRuntimes?: () => boolean;
+  /**
+   * Whether crossing into "update available" raises an in-app notice. Left out, notices stay off.
+   * Matches Settings → Updates → Update notifications (default off).
+   */
+  announceUpdates?: () => boolean;
 }
 
 /**
@@ -344,6 +349,8 @@ export function createProviderRuntimeStore(
         // A closed notification stays closed, including across the server switch that rebuilds this
         // store: the record of it is kept by the notification module, which outlives the switch.
         if (providerUpdateOfferClosed(update.provider, update.availableVersion)) continue;
+        // Settings → Updates → Update notifications (default off). Manual checks still show toasts.
+        if (owners.announceUpdates?.() !== true) continue;
         showProviderUpdateToast(update, () => void startProviderUpdate(update.provider));
       }
       announced = next;

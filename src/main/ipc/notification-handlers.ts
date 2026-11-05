@@ -36,7 +36,7 @@ export function notificationIpcHandlers({
       // it is how they find out whether the operating system lets OpenBot show notifications at all.
       test: handler(() => {
         if (!Notification.isSupported()) throw new Error(sourceText("error.app.notificationsUnsupported"));
-        showRetainedNotification(new Notification({ title: "OpenBot", body: translate("notification.test") }));
+        showRetainedNotification(new Notification({ title: "slavebot", body: translate("notification.test") }));
       }),
       openSettings: handler(async () => {
         const url = notificationSettingsUrl(process.platform);

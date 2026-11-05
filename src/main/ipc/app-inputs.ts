@@ -191,7 +191,7 @@ export function parseAppBehaviorPreferenceChange(input: unknown): AppBehaviorPre
 }
 
 export function parseUpdatePreference(input: unknown): UpdatePreferenceChange {
-  return parseSwitches(input, ["autoDownload", "allowRemoteUpdates", "autoInstall"], "Update preference is required.");
+  return parseSwitches(input, ["autoDownload", "allowRemoteUpdates", "autoInstall", "notifyUpdates"], "Update preference is required.");
 }
 
 /** The switches an admin of a joined server sets on its host. `allowRemoteUpdates` stays with the host user. */

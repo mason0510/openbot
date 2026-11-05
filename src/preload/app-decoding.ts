@@ -368,6 +368,7 @@ export function decodeUpdatePreference(value: unknown): UpdatePreference {
     autoDownload: requiredBoolean(preference, "autoDownload"),
     allowRemoteUpdates: requiredBoolean(preference, "allowRemoteUpdates"),
     autoInstall: requiredBoolean(preference, "autoInstall"),
+    notifyUpdates: requiredBoolean(preference, "notifyUpdates"),
   };
 }
 
