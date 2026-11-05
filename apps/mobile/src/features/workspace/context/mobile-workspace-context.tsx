@@ -110,6 +110,7 @@ import {
   type ServerLoadContext,
 } from "@/features/workspace/components/server-connection";
 import { createBrowserActions } from "@/features/workspace/context/browser-actions";
+import { createComputerActions } from "@/features/workspace/context/computer-actions";
 import {
   createHostRequestActions,
   hostOwnsHide,
@@ -1301,6 +1302,15 @@ export function MobileWorkspaceProvider({ children }: PropsWithChildren) {
       }),
     [request, liveState],
   );
+  const computer = useMemo(
+    () =>
+      createComputerActions({
+        request,
+        client: (serverId) => connections.current.get(serverId)?.client,
+        capabilities: serverCapabilities.current,
+      }),
+    [request],
+  );
 
   // One object for the session. A command reads the latest workspace from the refs when it runs.
   const actions = useMemo<MobileWorkspaceActions>(() => {
@@ -1312,6 +1322,11 @@ export function MobileWorkspaceProvider({ children }: PropsWithChildren) {
       ...workflows,
       openBrowserView: browser.openBrowserView,
       controlBrowserTab: browser.controlBrowserTab,
+      remoteDesktopSupport: computer.remoteDesktopSupport,
+      loadRemoteDesktopCapabilities: computer.loadRemoteDesktopCapabilities,
+      startRemoteDesktopSession: computer.startRemoteDesktopSession,
+      stopRemoteDesktopSession: computer.stopRemoteDesktopSession,
+      openRemoteDesktopViewer: computer.openRemoteDesktopViewer,
       mutateSidebarLayout: async (serverId, action) => {
         requireCapability(
           serverCapabilities.current,
@@ -1690,6 +1705,7 @@ export function MobileWorkspaceProvider({ children }: PropsWithChildren) {
     }));
   }, [
     browser,
+    computer,
     workflows,
     hostRequests,
     request,
@@ -1748,6 +1764,7 @@ export function MobileWorkspaceProvider({ children }: PropsWithChildren) {
     return {
       ...hostRequests.checks,
       browserViewSupport: browser.browserViewSupport,
+      remoteDesktopSupport: computer.remoteDesktopSupport,
       sidebarByServer,
       servers: orderedServers,
       memberCountByServer,
@@ -1837,6 +1854,7 @@ export function MobileWorkspaceProvider({ children }: PropsWithChildren) {
   }, [
     hostRequests,
     browser,
+    computer,
     sidebarByServer,
     orderedServers,
     memberCountByServer,

@@ -240,6 +240,14 @@ function AuthenticatedStack() {
           }}
         />
         <Stack.Screen
+          name="computer/[serverId]"
+          options={{
+            animation: pushAnimation,
+            contentStyle: { backgroundColor: sheetBackground },
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
           name="browser-tabs/[agentId]"
           // No header: the address bar is the sheet's first row, and the page shows above it.
           options={{

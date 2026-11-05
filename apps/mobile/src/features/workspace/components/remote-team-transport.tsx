@@ -1,4 +1,4 @@
-import type { AgentEvent, TeamRealtimeEvent } from "@openbot/contracts/ipc";
+import type { AgentEvent, RemoteDesktopSession, TeamRealtimeEvent } from "@openbot/contracts/ipc";
 import { TEAM_API_ROUTES } from "@openbot/contracts/team-api-routes";
 import {
   INSTANCE_TRANSFER_REMOTE_BYTES,
@@ -21,7 +21,7 @@ import {
 import { referenceFrom } from "@openbot/user-errors";
 import type { DOMProps } from "expo/dom";
 import * as Crypto from "expo-crypto";
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useMobileSession } from "@/features/auth/context/mobile-session-context";
 import type {
   BrowserViewBridgeCommand,
@@ -29,6 +29,11 @@ import type {
   BrowserViewBridgeOpen,
   RemoteBrowserViewSession,
 } from "@/features/browser/model/browser-view-bridge";
+import { remoteDesktopRoutes } from "@/features/computer/model/remote-desktop-session";
+import type {
+  RemoteDesktopViewerCommand,
+  RemoteDesktopViewerEvent,
+} from "@/features/computer/model/remote-desktop-viewer-bridge";
 import { supportLog, supportLogUrl } from "@/features/support/model/support-log";
 import { InactiveRequestError } from "@/features/workspace/model/pending-approvals";
 import { referencedError } from "@/features/workspace/model/referenced-error";
@@ -59,6 +64,10 @@ export interface RemoteTeamTransportRef {
     options: Omit<BrowserViewBridgeOpen, "viewId">,
     listener: (event: BrowserViewBridgeEvent) => void,
   ): RemoteBrowserViewSession | null;
+  openRemoteDesktopViewer(
+    session: RemoteDesktopSession,
+    listener: (event: RemoteDesktopViewerEvent) => void,
+  ): { close: () => void; refresh: () => void } | null;
 }
 
 interface RemoteTeamTransportProps {
@@ -129,11 +138,19 @@ export const RemoteTeamTransport = memo(
     const backgroundLane = backgroundReads.current;
 
     const viewListeners = useRef(new Map<string, (event: BrowserViewBridgeEvent) => void>());
+    const desktopListeners = useRef(new Map<string, (event: RemoteDesktopViewerEvent) => void>());
+    const [desktopOverlayActive, setDesktopOverlayActive] = useState(false);
     const sendViewCommand = useCallback((command: BrowserViewBridgeCommand) => {
       // The handle has the method only after the page has registered it.
       const browserView = bridge.current?.browserView;
       if (typeof browserView !== "function") return false;
       browserView(command);
+      return true;
+    }, []);
+    const sendDesktopCommand = useCallback((command: RemoteDesktopViewerCommand) => {
+      const remoteDesktop = bridge.current?.remoteDesktop;
+      if (typeof remoteDesktop !== "function") return false;
+      remoteDesktop(command);
       return true;
     }, []);
 
@@ -242,8 +259,35 @@ export const RemoteTeamTransport = memo(
             },
           };
         },
+        openRemoteDesktopViewer: (session, listener) => {
+          const viewId = Crypto.randomUUID();
+          desktopListeners.current.set(viewId, listener);
+          const opened = sendDesktopCommand({
+            type: "open",
+            viewId,
+            session: {
+              id: session.id,
+              viewerGrant: session.viewerGrant,
+              viewerUrl: session.viewerUrl,
+            },
+            streamPath: remoteDesktopRoutes.streamPath(session.id),
+          });
+          if (!opened) {
+            desktopListeners.current.delete(viewId);
+            return null;
+          }
+          setDesktopOverlayActive(true);
+          return {
+            refresh: () => sendDesktopCommand({ type: "refresh", viewId }),
+            close: () => {
+              if (!desktopListeners.current.delete(viewId)) return;
+              sendDesktopCommand({ type: "close", viewId });
+              setDesktopOverlayActive(desktopListeners.current.size > 0);
+            },
+          };
+        },
       }),
-      [enqueue, sendViewCommand, backgroundLane],
+      [enqueue, sendViewCommand, sendDesktopCommand, backgroundLane],
     );
 
     // A page that loads again, such as after Android ends its renderer, has none of the commands.
@@ -270,6 +314,14 @@ export const RemoteTeamTransport = memo(
         if (event.type === "ended") viewListeners.current.delete(event.viewId);
         listener?.(event);
       },
+      onRemoteDesktopEvent: async (event: RemoteDesktopViewerEvent) => {
+        const listener = desktopListeners.current.get(event.viewId);
+        if (event.type === "ended") {
+          desktopListeners.current.delete(event.viewId);
+          setDesktopOverlayActive(desktopListeners.current.size > 0);
+        }
+        listener?.(event);
+      },
       onAccountServersChanged: async () => latest.current.props.onMembershipChanged?.(),
       onConnectionUpdate: async (update: RemoteTeamConnectionUpdate) => latest.current.props.onConnectionUpdate(update),
       onDiagnostic: async ({ hostId, step, detail }: RemoteTeamDiagnostic) =>
@@ -283,11 +335,29 @@ export const RemoteTeamTransport = memo(
         latest.current.props.onTeamEvent(hostId, event),
     }));
 
+    const dom = useMemo(() => {
+      if (!desktopOverlayActive) return BRIDGE_DOM;
+      return {
+        ...expoGoDomOptions,
+        containerStyle: {
+          bottom: 0,
+          left: 0,
+          position: "absolute" as const,
+          right: 0,
+          top: 0,
+          zIndex: 40,
+        },
+        pointerEvents: "auto" as const,
+        scrollEnabled: false,
+        style: { flex: 1 },
+      };
+    }, [desktopOverlayActive]);
+
     return (
       <RemoteTeamBridge
         ref={bridge}
         active={props.active}
-        dom={BRIDGE_DOM}
+        dom={dom}
         onCommandResult={handleCommandResult}
         onReady={handleReady}
         {...actions}

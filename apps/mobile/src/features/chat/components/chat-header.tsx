@@ -6,6 +6,7 @@ import ArrowLeft from "lucide-react-native/icons/arrow-left";
 import ChevronDown from "lucide-react-native/icons/chevron-down";
 import Ellipsis from "lucide-react-native/icons/ellipsis";
 import Globe from "lucide-react-native/icons/globe";
+import Monitor from "lucide-react-native/icons/monitor";
 import TriangleAlert from "lucide-react-native/icons/triangle-alert";
 import { useMemo, useState } from "react";
 import { Pressable, View, type ViewStyle } from "react-native";
@@ -93,12 +94,16 @@ export function ChatHeader({
     (current) => !current.servers.some((server) => server.id === target.serverId && showsOnline(server)),
   );
   const browserView = useMobileWorkspaceSelector((current) => current.browserViewSupport(target.serverId).view);
+  const remoteDesktop = useMobileWorkspaceSelector(
+    (current) => current.remoteDesktopSupport(target.serverId).available,
+  );
   const browserAllowed = useBrowserFeature();
   // A channel opens the browser of one member: the browser is the browser of an agent.
   const browserAgent =
     target.kind === "agent" ? { agentId: target.id, agentIds: [], tabId: undefined } : channelBrowser;
   const browserShown =
     actionsMenu === undefined && browserAllowed && !disconnected && browserView && Boolean(browserAgent);
+  const computerShown = actionsMenu === undefined && !disconnected && remoteDesktop && target.kind === "agent";
   const members = useMemo(
     () => new Map(target.kind === "channel" ? target.members.map((member) => [member.id, member]) : []),
     [target],
@@ -152,6 +157,16 @@ export function ChatHeader({
         serverId: target.serverId,
         ...(browserAgent.tabId ? { tabId: browserAgent.tabId } : {}),
         ...(browserAgent.agentIds.length > 1 ? { agentIds: browserAgent.agentIds.join(",") } : {}),
+      },
+    });
+  };
+  const openComputer = () => {
+    void haptics.impact("soft");
+    router.push({
+      pathname: "/computer/[serverId]",
+      params: {
+        serverId: target.serverId,
+        ...(target.kind === "agent" ? { agentId: target.id } : {}),
       },
     });
   };
@@ -285,6 +300,15 @@ export function ChatHeader({
           browser screen opens a new one. A host that cannot stream a tab, or an app version
           the account server has the browser off for, shows no button. */}
         <ChatGlassIconButton
+          accessibilityLabel={t("mobile.computer.openLive")}
+          fallbackBackground={fallbackBackground}
+          hidden={!computerShown}
+          liquidGlassAvailable={liquidGlassAvailable}
+          onPress={openComputer}
+        >
+          <Monitor color={iconColor} size={24} strokeWidth={2} />
+        </ChatGlassIconButton>
+        <ChatGlassIconButton
           accessibilityLabel={t("mobile.browser.open")}
           fallbackBackground={fallbackBackground}
           hidden={!browserShown}
@@ -327,6 +351,12 @@ export function ChatHeader({
             tintColor={String(warning)}
             hidden={accessibilityHidden || !(target.kind === "channel" && needsAction)}
             onPress={openChannelActions}
+          />
+          <Stack.Toolbar.Button
+            icon="desktopcomputer"
+            accessibilityLabel={t("mobile.computer.openLive")}
+            hidden={accessibilityHidden || !computerShown}
+            onPress={openComputer}
           />
           <Stack.Toolbar.Button
             icon="globe"

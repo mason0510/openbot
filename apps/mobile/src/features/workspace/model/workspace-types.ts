@@ -251,6 +251,16 @@ type MobileBrowserTabAction =
 
 export interface MobileWorkspaceContextValue {
   browserViewSupport: (serverId: string) => MobileBrowserViewSupport;
+  /** Whether the host advertises Sunshine/Moonlight remote desktop. */
+  remoteDesktopSupport: (serverId: string) => { available: boolean };
+  loadRemoteDesktopCapabilities: (serverId: string) => Promise<import("@openbot/contracts/ipc").RemoteDesktopCapabilities>;
+  startRemoteDesktopSession: (serverId: string) => Promise<import("@openbot/contracts/ipc").RemoteDesktopSession>;
+  stopRemoteDesktopSession: (serverId: string, sessionId: string) => Promise<void>;
+  openRemoteDesktopViewer: (
+    serverId: string,
+    session: import("@openbot/contracts/ipc").RemoteDesktopSession,
+    listener: (event: import("@/features/computer/model/remote-desktop-viewer-bridge").RemoteDesktopViewerEvent) => void,
+  ) => { close: () => void; refresh: () => void } | null;
   /** Null when the server is not connected, or its peer page is not ready yet. */
   openBrowserView: (
     serverId: string,
@@ -865,6 +875,7 @@ interface McpSignInRelay {
 /** The checks that read what a host advertised. Their answer changes when a server connects. */
 export type MobileWorkspaceCapabilityCheck =
   | "browserViewSupport"
+  | "remoteDesktopSupport"
   | "canEditQueue"
   | "canRetryMessage"
   | "attachmentSupport"
